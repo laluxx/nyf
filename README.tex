@@ -1,0 +1,83 @@
+% Created 2026-01-13 Tue 00:59
+% Intended LaTeX compiler: pdflatex
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\date{\today}
+\title{}
+\hypersetup{
+ pdfauthor={},
+ pdftitle={},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 31.0.50 (Org mode 9.7.11)}, 
+ pdflang={English}}
+\begin{document}
+
+\tableofcontents
+
+\section{Recursive Formatter}
+\label{sec:org9b64b81}
+
+This project tries to formalize the Nytryx programming language
+
+\begin{verbatim}
+stack build
+stack install
+\end{verbatim}
+
+Add to the path since stack installs here
+
+\begin{verbatim}
+# STACK
+export PATH="$HOME/.local/bin:$PATH"
+\end{verbatim}
+
+Now you can use it anywhere in the system!
+
+\begin{verbatim}
+nyf help
+\end{verbatim}
+\section{{\bfseries\sffamily TODO} Potential new syntax [0/1]}
+\label{sec:org535366a}
+\subsection{{\bfseries\sffamily TODO} Switch Case}
+\label{sec:orgd8a46ca}
+
+This new syntax \href{file:///home/l/xos/projects/c/nytrix/src/std/core/reflect.ny}{Could be used here instead} it reoves the noise and leave
+a clear mapping between memory and consequence.
+
+\begin{verbatim}
+define x = 3; Global variable
+
+match tag {
+    0x4c495354
+    0x44494354
+    if (x > 3); <- Guard (Do it later)
+    0x5345545f
+    0x5455504c -> load64(x + 8)
+    0x44494354
+    0x5345545f
+    0x5455504c -> load64(x + 8)
+    otherwise
+      -> runsomething()
+}
+\end{verbatim}
+\section{{\bfseries\sffamily TODO} Modules [0/1]}
+\label{sec:org00c1adb}
+\begin{itemize}
+\item[{$\square$}] Modules must be \href{https://ncatlab.org/nlab/show/functor}{functors} The same as the \href{https://ocaml.org/manual/5.4/moduleexamples.html}{Ocaml module system}
+\end{itemize}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./etc/functor.jpg}
+\end{center}
+\end{document}

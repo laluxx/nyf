@@ -31,13 +31,13 @@ data Param = Param
 
 data Stmt
   = ExprStmt Expr
-  | VarDecl [Text] Expr                    -- def x = expr or x, y = expr
-  | Assign Expr Expr                       -- x = expr (lhs can be index/member)
-  | CompoundAssign Expr CompoundOp Expr    -- x += expr
-  | IfStmt Expr [Stmt] (Maybe [Stmt])     -- if (cond) {..} else {..}
+  | VarDecl [Text] Expr                 -- def x = expr or x, y = expr
+  | Assign Expr Expr                    -- x = expr (lhs can be index/member)
+  | CompoundAssign Expr CompoundOp Expr -- x += expr
+  | IfStmt Expr [Stmt] (Maybe [Stmt])   -- if (cond) {..} else {..}
   | WhileStmt Expr [Stmt]
-  | ForStmt Text Expr [Stmt]               -- for x in iterable {..}
-  | TryStmt [Stmt] (Maybe Text) [Stmt]     -- try {..} catch (e) {..}
+  | ForStmt Text Expr [Stmt]            -- for x in iterable {..}
+  | TryStmt [Stmt] (Maybe Text) [Stmt]  -- try {..} catch (e) {..}
   | ReturnStmt (Maybe Expr)
   | BreakStmt
   | ContinueStmt

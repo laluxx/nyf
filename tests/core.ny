@@ -2,7 +2,7 @@
 
 ;; Author: x3ric
 ;; Maintainer: x3ric
-;; Keywords: zcore core
+;; Keywords: core
 
 ;; Function:  54
 ;; Variables: 2
@@ -23,7 +23,7 @@ fn bool(x) {
     return !!x
 }
 
-fn load8(p){
+fn load8(p) {
   "Loads a single byte (uint8) from the specified memory address."
     return rt_load8(p)
 }
@@ -142,7 +142,7 @@ fn is_set(x) {
 fn is_tuple(x) {
   "Checks if a value is a tuple."
     if(!rt_is_ptr(x)){ return false }
-    tag = load64(x)
+    def tag = load64(x)
     return tag == 103
 }
 
@@ -169,8 +169,8 @@ fn list_clone(lst) {
     sys_write(1, "DBG: len ok\n", 12)
     out = list(8)
     sys_write(1, "DBG: list ok\n", 13)
-    i = 0
-    while(i < n){
+    def i = 0
+    while(i<n) {
         sys_write(1, "DBG: loop\n", 10)
         def val = get(lst, i)
         def out = append(out, val)
@@ -180,20 +180,20 @@ fn list_clone(lst) {
     return out
 }
 
-fn load_item(lst, i) {
+fn load_item(lst,i) {
   "Internal: Loads the i-th item from a collection's raw memory."
     def raw_i = i >> 1                    ; Untag index
     return load64(lst + (24 + raw_i * 8)) ; HDR_SIZE is 24
 }
 
-fn store_item(lst, i, v) {
+fn store_item(lst,i,v) {
   "Internal: Stores value V at the I-th position in a collection's raw memory."
     def raw_i = i >> 1  ; Untag index
     store64(lst + (24 + raw_i * 8), v)
     return v
 }
 
-fn get(obj, i) {
+fn get(obj,i) {
   "Retrieves the item at index I from a list, tuple, or dictionary.
 For strings, returns a character substring."
     def t = type(obj)
@@ -212,7 +212,7 @@ For strings, returns a character substring."
     return load_item(obj, i)
 }
 
-fn set_idx(obj, i, v) {
+fn set_idx(obj,i,v) {
   "Sets the value at index I in a list or dictionary."
     if(is_dict(obj)) {
         return setitem(obj, i, v)
@@ -277,7 +277,7 @@ fn extend(lst, other) {
     if(is_list(lst) == false || is_list(other) == false){ return lst }
     def i = 0
     def n = list_len(other)
-    while(i < n){
+    while(i<n) {
         lst = append(lst, get(other, i))
         i = i + 1
     }

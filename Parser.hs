@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-
-module Parser where
+module Parser (file, expr, stmt, defStmt) where
 
 import Control.Monad (void)
 import Data.Void (Void)
@@ -28,16 +27,45 @@ sc = L.space space1 lineComment blockComment
     lineComment  = L.skipLineComment ";"
     blockComment = L.skipBlockComment ";*" "*;"
 
+-- Space consumer that does NOT consume newlines
+scn :: Parser ()
+scn = L.space (void $ some (char ' ' <|> char '\t')) lineComment blockComment
+  where
+    lineComment  = L.skipLineComment ";"
+    blockComment = L.skipBlockComment ";*" "*;"
+
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
+
+-- Lexeme that preserves newlines for statement separation
+lexemeN :: Parser a -> Parser a
+lexemeN = L.lexeme scn
 
 symbol :: Text -> Parser ()
 symbol = void . L.symbol sc
 
-parens, braces, brackets :: Parser a -> Parser a
+symbolN :: Text -> Parser ()
+symbolN = void . L.symbol scn
+
+parens, brackets :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
-braces = between (symbol "{") (symbol "}")
 brackets = between (symbol "[") (symbol "]")
+
+-- Custom braces that handles statement blocks properly
+braces :: Parser a -> Parser a
+braces p = do
+  symbol "{"
+  result <- p
+  symbol "}"
+  return result
+
+-- Statement terminator: semicolon or newline
+stmtSep :: Parser ()
+stmtSep = void (symbol ";") <|> void (some (char '\n' <* scn)) <|> lookAhead (void (char '}'))
+
+-- Optional statement terminator
+optStmtSep :: Parser ()
+optStmtSep = optional stmtSep >> return ()
 
 chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainl1 p op = p >>= rest
@@ -57,21 +85,27 @@ keywords =
   [ "fn", "define", "use", "if", "else", "elif", "while", "return"
   , "for", "in", "try", "catch", "defer", "goto", "lambda"
   , "break", "continue", "match", "layout", "comptime"
-  , "true", "false", "as", "asm", "embed"
+  , "true", "false", "as", "asm", "embed", "def"
   ]
-
--- Note: 'def' is NOT in keywords because it's a statement-level construct,
--- not an expression-level identifier restriction
 
 isKeyword :: Text -> Bool
 isKeyword = (`elem` keywords)
 
 identifier :: Parser Text
-identifier = do
-  x <- lexeme $ takeWhile1P Nothing (\c -> isAlpha c || isDigit c || c == '_')
-  if isKeyword x
-    then fail $ "keyword cannot be identifier: " ++ T.unpack x
-    else return x
+identifier = try $ lexeme (p >>= check)
+  where
+    p = do
+      chars <- takeWhile1P Nothing isIdentChar
+      if T.all isOperatorChar chars
+        then fail "not an identifier"
+        else return chars
+
+    isIdentChar c = isAlpha c || isDigit c || c `elem` ("_-?!$<>=/+*&|^~@#%" :: String)
+    isOperatorChar c = c `elem` ("-+*/<>=!&|^~%" :: String)
+
+    check x = if isKeyword x
+              then fail $ "keyword cannot be identifier: " ++ T.unpack x
+              else return x
 
 --- Literals
 
@@ -130,22 +164,30 @@ fstringLiteral = lexeme $ do
 --- Top-level
 
 file :: Parser [Decl]
-file = sc *> many decl <* eof
+file = sc *> many topLevel <* eof
+  where
+    topLevel = choice
+      [ try useAsDecl
+      , try defineDecl
+      , try layoutDecl
+      , fnDecl
+      ]
 
 decl :: Parser Decl
 decl = choice
-  [ try useDecl
+  [ try useAsDecl
   , try defineDecl
   , try layoutDecl
   , fnDecl
   ]
 
-useDecl :: Parser Decl
-useDecl = do
+useAsDecl :: Parser Decl
+useAsDecl = do
   symbol "use"
   parts <- identifier `sepBy1` symbol "."
   let path = T.intercalate "." parts
   alias <- optional $ symbol "as" >> identifier
+  optStmtSep
   return $ UseDecl path alias
 
 defineDecl :: Parser Decl
@@ -195,38 +237,37 @@ extractDocString xs = (Nothing, xs)
 
 stmt :: Parser Stmt
 stmt = choice
-  [ try useStmt
-  , try layoutStmt
-  , try fnStmt
-  , try defStmt
-  , try assignOrExprStmt
-  , try ifStmt
+  [ try ifStmt
   , try whileStmt
   , try forStmt
   , try tryStmt
+  , try matchStmt
   , try returnStmt
   , try breakStmt
   , try continueStmt
   , try gotoStmt
-  , try labelStmt
   , try deferStmt
-  , try matchStmt
+  , try labelStmt
+  , try defStmt
+  , try fnStmtDecl
+  , try layoutStmtDecl
+  , try useStmtDecl
+  , try assignOrExprStmt
   , blockStmt
   ]
 
-useStmt :: Parser Stmt
-useStmt = do
-  UseDecl path _alias <- useDecl
-  _ <- optional (symbol ";")
-  return $ ExprStmt (StrLit $ "use " <> path)
+useStmtDecl :: Parser Stmt
+useStmtDecl = do
+  _ <- useAsDecl
+  return $ ExprStmt (Var "use")
 
-layoutStmt :: Parser Stmt
-layoutStmt = do
+layoutStmtDecl :: Parser Stmt
+layoutStmtDecl = do
   LayoutDecl name _fields <- layoutDecl
   return $ ExprStmt (StrLit $ "layout " <> name)
 
-fnStmt :: Parser Stmt
-fnStmt = do
+fnStmtDecl :: Parser Stmt
+fnStmtDecl = do
   FnDecl name _params _retType _doc _body <- fnDecl
   return $ ExprStmt (StrLit $ "fn " <> name)
 
@@ -236,74 +277,76 @@ defStmt = do
   names <- identifier `sepBy1` symbol ","
   symbol "="
   e <- expr
-  _ <- optional (symbol ";")
+  optStmtSep
   return $ VarDecl names e
 
 assignOrExprStmt :: Parser Stmt
-assignOrExprStmt = do
-  lhs <- try (identifier >>= \i -> lookAhead (assignOp) >> return (Var i)) <|> exprNoStmt
-  choice
-    [ do
-        op <- compoundAssignOp
-        rhs <- expr
-        _ <- optional (symbol ";")
-        return $ CompoundAssign lhs op rhs
-    , do
-        symbol "="
-        rhs <- expr
-        _ <- optional (symbol ";")
-        return $ Assign lhs rhs
-    , do
-        _ <- optional (symbol ";")
-        return $ ExprStmt lhs
-    ]
+assignOrExprStmt = try assignStmt <|> exprStmt
   where
-    exprNoStmt = term >>= postfix
-    assignOp = void (symbol "=") <|> void (try compoundAssignOp)
+    assignStmt = do
+      lhs <- term >>= postfix
+      choice
+        [ do
+            op <- compoundAssignOp
+            rhs <- expr
+            optStmtSep
+            return $ CompoundAssign lhs op rhs
+        , do
+            symbol "="
+            rhs <- expr
+            optStmtSep
+            return $ Assign lhs rhs
+        ]
+
+    exprStmt = do
+      e <- expr
+      optStmtSep
+      return $ ExprStmt e
 
     compoundAssignOp = choice
-      [ symbol "+=" $> AddAssign
-      , symbol "-=" $> SubAssign
-      , symbol "*=" $> MulAssign
-      , symbol "/=" $> DivAssign
-      , symbol "%=" $> ModAssign
-      , symbol "&=" $> AndAssign
-      , symbol "|=" $> OrAssign
-      , symbol "^=" $> XorAssign
-      , symbol "<<=" $> LShiftAssign
-      , symbol ">>=" $> RShiftAssign
+      [ try (symbol "+=" $> AddAssign)
+      , try (symbol "-=" $> SubAssign)
+      , try (symbol "*=" $> MulAssign)
+      , try (symbol "/=" $> DivAssign)
+      , try (symbol "%=" $> ModAssign)
+      , try (symbol "&=" $> AndAssign)
+      , try (symbol "|=" $> OrAssign)
+      , try (symbol "^=" $> XorAssign)
+      , try (symbol "<<=" $> LShiftAssign)
+      , try (symbol ">>=" $> RShiftAssign)
       ]
 
 ifStmt :: Parser Stmt
 ifStmt = do
-  symbol "if" <|> symbol "elif"
-  _ <- optional (symbol "(")
-  cond <- expr
-  _ <- optional (symbol ")")
+  symbol "if"
+  cond <- parens expr <|> expr
   thenBranch <- braces (many stmt)
-  elseBranch <- optional $ choice
-    [ symbol "else" >> (braces (many stmt) <|> ((\s -> [s]) <$> ifStmt))
-    , (\s -> [s]) <$> ifStmt
-    ]
+  elseBranch <- optional elseOrElif
   return $ IfStmt cond thenBranch elseBranch
+  where
+    elseOrElif = choice
+      [ try $ do
+          symbol "elif"
+          elifCond <- parens expr <|> expr
+          elifThen <- braces (many stmt)
+          elifElse <- optional elseOrElif
+          return [IfStmt elifCond elifThen elifElse]
+      , symbol "else" >> braces (many stmt)
+      ]
 
 whileStmt :: Parser Stmt
 whileStmt = do
   symbol "while"
-  _ <- optional (symbol "(")
-  cond <- expr
-  _ <- optional (symbol ")")
+  cond <- parens expr <|> expr
   body <- braces (many stmt)
   return $ WhileStmt cond body
 
 forStmt :: Parser Stmt
 forStmt = do
   symbol "for"
-  _ <- optional (symbol "(")
-  var <- identifier
+  var <- parens identifier <|> identifier
   symbol "in"
   iterable <- expr
-  _ <- optional (symbol ")")
   body <- braces (many stmt)
   return $ ForStmt var iterable body
 
@@ -312,10 +355,7 @@ tryStmt = do
   symbol "try"
   tryBody <- braces (many stmt)
   symbol "catch"
-  errVar <- optional $ choice
-    [ parens identifier
-    , identifier
-    ]
+  errVar <- optional $ parens identifier <|> identifier
   catchBody <- braces (many stmt)
   return $ TryStmt tryBody errVar catchBody
 
@@ -323,20 +363,20 @@ returnStmt :: Parser Stmt
 returnStmt = do
   symbol "return"
   e <- optional expr
-  _ <- optional (symbol ";")
+  optStmtSep
   return $ ReturnStmt e
 
 breakStmt :: Parser Stmt
-breakStmt = symbol "break" >> void (optional (symbol ";")) >> return BreakStmt
+breakStmt = symbol "break" >> optStmtSep >> return BreakStmt
 
 continueStmt :: Parser Stmt
-continueStmt = symbol "continue" >> void (optional (symbol ";")) >> return ContinueStmt
+continueStmt = symbol "continue" >> optStmtSep >> return ContinueStmt
 
 gotoStmt :: Parser Stmt
 gotoStmt = do
   symbol "goto"
   lbl <- identifier
-  _ <- optional (symbol ";")
+  optStmtSep
   return $ GotoStmt lbl
 
 labelStmt :: Parser Stmt
@@ -365,7 +405,7 @@ matchStmt = do
   where
     matchArm = do
       pattern <- expr
-      _ <- optional (symbol ":")
+      void $ optional (symbol ":")
       conseq <- braces (many stmt)
       return $ MatchArm pattern conseq
 
@@ -385,53 +425,53 @@ opEq :: Parser Expr
 opEq = chainl1 opRel equalityOp
   where
     equalityOp = choice
-      [ symbol "==" $> BinOp Eq
-      , symbol "!=" $> BinOp Neq
+      [ try (symbol "==" $> BinOp Eq)
+      , try (symbol "!=" $> BinOp Neq)
       ]
 
 opRel :: Parser Expr
 opRel = chainl1 opBit relOp
   where
     relOp = choice
-      [ symbol "<=" $> BinOp Le
-      , symbol ">=" $> BinOp Ge
-      , symbol "<" $> BinOp Lt
-      , symbol ">" $> BinOp Gt
+      [ try (symbol "<=" $> BinOp Le)
+      , try (symbol ">=" $> BinOp Ge)
+      , try (symbol "<" $> BinOp Lt)
+      , try (symbol ">" $> BinOp Gt)
       ]
 
 opBit :: Parser Expr
 opBit = chainl1 opAdd bitOp
   where
     bitOp = choice
-      [ symbol "<<" $> BinOp LShift
-      , symbol ">>" $> BinOp RShift
-      , symbol "&" $> BinOp BitAnd
-      , symbol "|" $> BinOp BitOr
-      , symbol "^" $> BinOp BitXor
+      [ try (symbol "<<" $> BinOp LShift)
+      , try (symbol ">>" $> BinOp RShift)
+      , try (symbol "&" $> BinOp BitAnd)
+      , try (symbol "|" $> BinOp BitOr)
+      , try (symbol "^" $> BinOp BitXor)
       ]
 
 opAdd :: Parser Expr
 opAdd = chainl1 opMul addOp
   where
     addOp = choice
-      [ symbol "+" $> BinOp Add
-      , symbol "-" $> BinOp Sub
+      [ try (symbol "+" $> BinOp Add)
+      , try (symbol "-" $> BinOp Sub)
       ]
 
 opMul :: Parser Expr
 opMul = chainl1 unary mulOp
   where
     mulOp = choice
-      [ symbol "*" $> BinOp Mul
-      , symbol "/" $> BinOp Div
-      , symbol "%" $> BinOp Mod
+      [ try (symbol "*" $> BinOp Mul)
+      , try (symbol "/" $> BinOp Div)
+      , try (symbol "%" $> BinOp Mod)
       ]
 
 unary :: Parser Expr
 unary = choice
-  [ symbol "-" >> UnOp Neg <$> unary
-  , symbol "!" >> UnOp Not <$> unary
-  , symbol "~" >> UnOp BitNot <$> unary
+  [ try (symbol "-" >> UnOp Neg <$> unary)
+  , try (symbol "!" >> UnOp Not <$> unary)
+  , try (symbol "~" >> UnOp BitNot <$> unary)
   , term >>= postfix
   ]
 
@@ -439,9 +479,9 @@ term :: Parser Expr
 term = choice
   [ try (FString <$> fstringLiteral)
   , try (FloatLit <$> float)
-  , IntLit <$> integer
-  , BoolLit True <$ symbol "true"
-  , BoolLit False <$ symbol "false"
+  , try (IntLit <$> integer)
+  , try (BoolLit True <$ symbol "true")
+  , try (BoolLit False <$ symbol "false")
   , try (StrLit <$> stringLiteral)
   , try inferredMember
   , try asmExpr
@@ -449,7 +489,7 @@ term = choice
   , try comptimeExpr
   , try lambdaExpr
   , try fnExpr
-  , parens tupleOrExpr
+  , try (parens tupleOrExpr)
   , try dictOrSet
   , try listLit
   , Var <$> identifier

@@ -1,0 +1,52 @@
+* Recursive Formatter
+
+This project tries to formalize the Nytryx programming language
+
+#+begin_src sh
+stack build
+stack install
+#+end_src
+
+Add to the path since stack installs here
+
+#+begin_src sh
+# STACK
+export PATH="$HOME/.local/bin:$PATH"
+#+end_src
+
+Now you can use it anywhere in the system!
+
+#+begin_src sh
+nyf help
+#+end_src
+
+
+* TODO Potential new syntax [0/1]
+** TODO Switch Case
+
+ This new syntax [[file:~/xos/projects/c/nytrix/src/std/core/reflect.ny::fn len(x) {][Could be used here instead]] it reoves the noise and leave
+ a clear mapping between memory and consequence.
+
+   #+begin_src nytrix
+   define x = 3; Global variable
+
+   match tag {
+       0x4c495354
+       0x44494354
+       if (x > 3); <- Guard (Do it later)
+       0x5345545f
+       0x5455504c -> load64(x + 8)
+       0x44494354
+       0x5345545f
+       0x5455504c -> load64(x + 8)
+       otherwise
+         -> runsomething()
+   }
+   #+end_src
+
+
+
+* TODO Modules [0/1]
+- [ ] Modules must be [[https://ncatlab.org/nlab/show/functor][functors]] The same as the [[https://ocaml.org/manual/5.4/moduleexamples.html][Ocaml module system]]
+
+[[file:./etc/functor.jpg]]

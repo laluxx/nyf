@@ -6,7 +6,7 @@ import System.FilePath ((</>), takeExtension, splitExtension)
 import Control.Monad (when)
 import qualified Data.Text.IO as TIO
 import System.Exit (exitFailure, exitSuccess)
-import Text.Megaparsec (parse)
+import Text.Megaparsec (parse, errorBundlePretty)
 import Parser (file)
 import System.CPUTime (getCPUTime)
 import Text.Printf (printf)
@@ -29,6 +29,7 @@ data TestResult = TestResult
   { testName :: FilePath
   , testPassed :: Bool
   , testTimeNs :: Integer
+  , testError :: Maybe String
   }
 
 data TestStats = TestStats
@@ -42,12 +43,12 @@ runTest :: FilePath -> IO TestResult
 runTest fp = do
   startTime <- getCPUTime
   input <- TIO.readFile fp
-  let result = case parse file fp input of
-        Left _ -> False
-        Right _ -> True
+  let (result, errMsg) = case parse file fp input of
+        Left err -> (False, Just $ errorBundlePretty err)
+        Right _ -> (True, Nothing)
   endTime <- getCPUTime
   let elapsedNs = (endTime - startTime) * 1000 `div` 1000000
-  return $ TestResult fp result elapsedNs
+  return $ TestResult fp result elapsedNs errMsg
 
 formatTime :: Integer -> String
 formatTime ns
@@ -83,6 +84,12 @@ printTestLine fp passed timeNs = do
   putStr $ colorGray ++ dots ++ colorReset ++ " "
   putStrLn $ status ++ " " ++ colorGray ++ "[" ++ colorReset ++ timeStr
 
+printError :: FilePath -> String -> IO ()
+printError fp err = do
+  putStrLn ""
+  putStrLn err
+  putStrLn ""
+
 printSummary :: TestStats -> IO ()
 printSummary stats = do
   let totalTimeStr = formatTime (totalTimeNs stats)
@@ -114,7 +121,7 @@ printSummary stats = do
       putStrLn $ colorBold ++ colorGreen ++ "╚══════════════════════════════════════════════════════════════════════════════╝" ++ colorReset
     else do
       putStrLn $ colorBold ++ colorRed ++ "╔══════════════════════════════════════════════════════════════════════════════╗" ++ colorReset
-      putStrLn $ colorBold ++ colorRed ++ "║" ++ colorReset ++ "                        " ++ colorRed ++ "✗" ++ colorReset ++ " " ++ colorBold ++ colorRed ++ "SOME TESTS FAILED" ++ colorReset ++ " " ++ colorRed ++ "✗" ++ colorReset ++ "                                 " ++ colorBold ++ colorRed ++ "║" ++ colorReset
+      putStrLn $ colorBold ++ colorRed ++ "║" ++ colorReset ++ "                              " ++ colorRed ++ "✗" ++ colorReset ++ " " ++ colorBold ++ colorRed ++ "SOME TESTS FAILED" ++ colorReset ++ " " ++ colorRed ++ "✗" ++ colorReset ++ "                           " ++ colorBold ++ colorRed ++ "║" ++ colorReset
       putStrLn $ colorBold ++ colorRed ++ "╚══════════════════════════════════════════════════════════════════════════════╝" ++ colorReset
 
   putStrLn ""
@@ -138,15 +145,9 @@ runAllTests = do
   printTestHeader (length sortedFiles)
 
   startTime <- getCPUTime
-  results <- mapM (\fp -> do
-    result <- runTest fp
-    printTestLine fp (testPassed result) (testTimeNs result)
-    return result
-    ) sortedFiles
-  endTime <- getCPUTime
+  (results, totalTime) <- runTestsWithEarlyExit sortedFiles startTime 0 []
 
-  let totalTime = (endTime - startTime) * 1000 `div` 1000000
-      passed = length $ filter testPassed results
+  let passed = length $ filter testPassed results
       failed = length $ filter (not . testPassed) results
       stats = TestStats
         { totalTests = length results
@@ -160,6 +161,28 @@ runAllTests = do
   if failed > 0
     then exitFailure
     else exitSuccess
+
+runTestsWithEarlyExit :: [FilePath] -> Integer -> Int -> [TestResult] -> IO ([TestResult], Integer)
+runTestsWithEarlyExit [] startTime _ results = do
+  endTime <- getCPUTime
+  let totalTime = (endTime - startTime) * 1000 `div` 1000000
+  return (reverse results, totalTime)
+runTestsWithEarlyExit (fp:fps) startTime testCount results = do
+  result <- runTest fp
+  printTestLine fp (testPassed result) (testTimeNs result)
+
+  if not (testPassed result)
+    then do
+      -- Print error and stop
+      case testError result of
+        Just err -> printError fp err
+        Nothing -> return ()
+      endTime <- getCPUTime
+      let totalTime = (endTime - startTime) * 1000 `div` 1000000
+      return (reverse (result : results), totalTime)
+    else
+      -- Continue with next test
+      runTestsWithEarlyExit fps startTime (testCount + 1) (result : results)
 
 -- Sort like `ls`: by filename, not full path
 sortTestFiles :: [FilePath] -> [FilePath]
