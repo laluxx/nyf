@@ -1,0 +1,5 @@
+define nums = [1, 2, 3, 4, 5]
+define slice1 = nums[1:3]
+define slice2 = nums[:2]
+define slice3 = nums[2:]
+define slice4 = nums[::2]

@@ -21,7 +21,36 @@ nyf help
 #+end_src
 
 
-* TODO Potential new syntax [0/1]
+* TODO Potential new syntax [0/3]
+
+** TODO Hashmap
+
+@Laluxx
+We should support both syntaxes, The first is cleaner IMO.
+But the second should also be supported and the default.
+
+   #+begin_src nytrix
+   define Hashmap = { meow: 1
+                      ciao: 2
+                      ciao: 3
+                      define: 4 }
+   #+end_src
+
+   #+begin_src nytrix
+   define Hashmap = { "meow": 1
+                      "ciao": 2
+                      "ciao": 3
+                      "define": 4 }
+   #+end_src
+
+** TODO Sets
+
+Sets MUST Start with #, #{} is the empty set.
+
+   #+begin_src nytrix
+   define Set  = #{1, "hello", true}; <- This is a set!
+   #+end_src
+
 ** TODO Switch Case
 
  This new syntax [[file:~/xos/projects/c/nytrix/src/std/core/reflect.ny::fn len(x) {][Could be used here instead]] it reoves the noise and leave
@@ -47,6 +76,6 @@ nyf help
 
 
 * TODO Modules [0/1]
-- [ ] Modules must be [[https://ncatlab.org/nlab/show/functor][functors]] The same as the [[https://ocaml.org/manual/5.4/moduleexamples.html][Ocaml module system]]
+- [ ] Modules must be [[https://ncatlab.org/nlab/show/functor][functors]]. Exactly like the [[https://ocaml.org/manual/5.4/moduleexamples.html][Ocaml module system]]
 
 [[file:./etc/functor.jpg]]

@@ -61,7 +61,7 @@ printTestHeader :: Int -> IO ()
 printTestHeader count = do
   putStrLn ""
   putStrLn $ colorBold ++ colorCyan ++ "╔══════════════════════════════════════════════════════════════════════════════╗" ++ colorReset
-  putStrLn $ colorBold ++ colorCyan ++ "║" ++ colorReset ++ "                              RUNNING TEST SUITE                              " ++ colorBold ++ colorCyan ++ "║" ++ colorReset
+  putStrLn $ colorBold ++ colorCyan ++ "║" ++ colorReset ++ "                             RUNNING PARSE TEST SUITE                         " ++ colorBold ++ colorCyan ++ "║" ++ colorReset
   putStrLn $ colorBold ++ colorCyan ++ "╚══════════════════════════════════════════════════════════════════════════════╝" ++ colorReset
   putStrLn ""
   putStrLn $ "                           " ++ colorBold ++ colorBlue ++ "Total tests registered:" ++ colorReset ++ " " ++ show count

@@ -7,7 +7,7 @@ maintainer:          "lorenzoaddamo10@gmail.com"
 copyright:           "2026 Laluxx"
 
 extra-source-files:
-- README.md
+- README.org
 - LICENSE
 
 description:         Formatter for the Nytrix programming language

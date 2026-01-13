@@ -38,14 +38,9 @@ lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
 -- Lexeme that preserves newlines for statement separation
-lexemeN :: Parser a -> Parser a
-lexemeN = L.lexeme scn
 
 symbol :: Text -> Parser ()
 symbol = void . L.symbol sc
-
-symbolN :: Text -> Parser ()
-symbolN = void . L.symbol scn
 
 parens, brackets :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
@@ -65,7 +60,7 @@ stmtSep = void (symbol ";") <|> void (some (char '\n' <* scn)) <|> lookAhead (vo
 
 -- Optional statement terminator
 optStmtSep :: Parser ()
-optStmtSep = optional stmtSep >> return ()
+optStmtSep = void (optional stmtSep)
 
 chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainl1 p op = p >>= rest
@@ -100,8 +95,10 @@ identifier = try $ lexeme (p >>= check)
         then fail "not an identifier"
         else return chars
 
-    isIdentChar c = isAlpha c || isDigit c || c `elem` ("_-?!$<>=/+*&|^~@#%" :: String)
-    isOperatorChar c = c `elem` ("-+*/<>=!&|^~%" :: String)
+    -- Allow '-' and '>' separately so they can form '->'
+    -- But NOT '<' which should only be an operator
+    isIdentChar c = isAlpha c || isDigit c || c `elem` ("_-?!$>/+*^~@#%" :: String)
+    isOperatorChar c = c `elem` ("-+*/>!^~%" :: String)
 
     check x = if isKeyword x
               then fail $ "keyword cannot be identifier: " ++ T.unpack x
@@ -131,13 +128,11 @@ stringLiteral = lexeme $ T.pack <$> stringBody
 
     tripleQuoted q = try $ do
       _ <- count 3 (char q)
-      s <- manyTill L.charLiteral (try $ count 3 (char q))
-      return s
+      manyTill L.charLiteral (try $ count 3 (char q))
 
     singleQuoted q = do
       _ <- char q
-      s <- manyTill L.charLiteral (char q)
-      return s
+      manyTill L.charLiteral (char q)
 
 fstringLiteral :: Parser [FStringPart]
 fstringLiteral = lexeme $ do
@@ -145,8 +140,7 @@ fstringLiteral = lexeme $ do
   q <- char '"' <|> char '\''
   isTriple <- option False (try $ count 2 (char q) >> return True)
   let endQuote = if isTriple then void (count 3 (char q)) else void (char q)
-  parts <- manyTill (fstringPart q) (try endQuote)
-  return parts
+  manyTill (fstringPart q) (try endQuote)
   where
     fstringPart q = try interpolation <|> textPart q
 
@@ -170,16 +164,35 @@ file = sc *> many topLevel <* eof
       [ try useAsDecl
       , try defineDecl
       , try layoutDecl
-      , fnDecl
+      , try fnDecl
+      , try exprDecl
+      , defError  -- Add this to catch 'def' at top level
       ]
 
-decl :: Parser Decl
-decl = choice
-  [ try useAsDecl
-  , try defineDecl
-  , try layoutDecl
-  , fnDecl
-  ]
+    defError = do
+      try (symbol "def")
+      fail "Cannot use 'def' in global scope. Use 'define' for global variables instead."
+
+    exprDecl = do
+      e <- expr
+      optStmtSep
+      return $ ExprDecl e
+
+-- file :: Parser [Decl]
+-- file = sc *> many topLevel <* eof
+--   where
+--     topLevel = choice
+--       [ try useAsDecl
+--       , try defineDecl
+--       , try layoutDecl
+--       , try fnDecl
+--       , exprDecl  -- Add this
+--       ]
+
+--     exprDecl = do
+--       e <- expr
+--       optStmtSep
+--       return $ ExprDecl e
 
 useAsDecl :: Parser Decl
 useAsDecl = do
@@ -195,8 +208,7 @@ defineDecl = do
   symbol "define"
   name <- identifier
   symbol "="
-  val <- expr
-  return $ DefineDecl name val
+  DefineDecl name <$> expr
 
 layoutDecl :: Parser Decl
 layoutDecl = do
@@ -222,9 +234,12 @@ fnDecl = do
   return $ FnDecl name params retType doc rest
   where
     param = do
-      isVariadic <- option False (symbol "..." $> True)
+      isVariadic <- option False (try (symbol "..." $> True))
       if isVariadic
-        then fail "variadic placeholder"
+        then do
+          pname <- identifier
+          -- Variadic params can't have type annotations or defaults
+          return $ Param ("..." <> pname) Nothing Nothing
         else do
           pname <- identifier
           ptype <- optional (symbol ":" >> identifier)
@@ -236,7 +251,7 @@ extractDocString (ExprStmt (StrLit s) : rest) = (Just s, rest)
 extractDocString xs = (Nothing, xs)
 
 stmt :: Parser Stmt
-stmt = choice
+stmt = sc *> choice  -- Add this 'sc *>' to consume leading whitespace
   [ try ifStmt
   , try whileStmt
   , try forStmt
@@ -415,11 +430,17 @@ blockStmt = BlockStmt <$> braces (many stmt)
 expr :: Parser Expr
 expr = opOr
 
+symbolOp :: Text -> Parser ()
+symbolOp op = try $ do
+  _ <- string op
+  sc
+  return ()
+
 opOr :: Parser Expr
-opOr = chainl1 opAnd (symbol "||" $> LogicalOp Or)
+opOr = chainl1 opAnd (symbolOp "||" $> LogicalOp Or)
 
 opAnd :: Parser Expr
-opAnd = chainl1 opEq (symbol "&&" $> LogicalOp And)
+opAnd = chainl1 opEq (symbolOp "&&" $> LogicalOp And)
 
 opEq :: Parser Expr
 opEq = chainl1 opRel equalityOp
@@ -445,8 +466,8 @@ opBit = chainl1 opAdd bitOp
     bitOp = choice
       [ try (symbol "<<" $> BinOp LShift)
       , try (symbol ">>" $> BinOp RShift)
-      , try (symbol "&" $> BinOp BitAnd)
-      , try (symbol "|" $> BinOp BitOr)
+      , try (symbol "&" <* notFollowedBy (char '&') $> BinOp BitAnd)
+      , try (symbol "|" <* notFollowedBy (char '|') $> BinOp BitOr)
       , try (symbol "^" $> BinOp BitXor)
       ]
 
@@ -498,8 +519,7 @@ term = choice
 inferredMember :: Parser Expr
 inferredMember = do
   symbol "."
-  name <- identifier
-  return $ InferredMember name
+  InferredMember <$> identifier
 
 asmExpr :: Parser Expr
 asmExpr = do
@@ -610,8 +630,7 @@ postfix e = choice
     namedArg = do
       name <- identifier
       symbol "="
-      val <- expr
-      return $ CallArg (Just name) val
+      CallArg (Just name) <$> expr
     positionalArg = CallArg Nothing <$> expr
 
     indexExpr = do
@@ -623,6 +642,3 @@ postfix e = choice
           step <- optional (symbol ":" >> expr)
           return $ Index e start stop step
         else return $ Index e start Nothing Nothing
-
-commaSep :: Parser a -> Parser [a]
-commaSep p = p `sepBy` symbol ","

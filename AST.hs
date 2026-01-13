@@ -7,10 +7,11 @@ import GHC.Generics (Generic)
 --- Top-level declarations
 
 data Decl
-  = UseDecl Text (Maybe Text)      -- use std.core (as alias)?
-  | DefineDecl Text Expr           -- define x = expr
-  | FnDecl Text [Param] (Maybe Text) (Maybe DocString) [Stmt]  -- return type
-  | LayoutDecl Text [LayoutField]  -- layout Name { fields }
+  = UseDecl Text (Maybe Text)
+  | DefineDecl Text Expr
+  | FnDecl Text [Param] (Maybe Text) (Maybe DocString) [Stmt]
+  | LayoutDecl Text [LayoutField]
+  | ExprDecl Expr
   deriving (Show, Eq, Generic)
 
 type DocString = Text

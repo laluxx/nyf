@@ -102,15 +102,23 @@ fn realloc(p, newsz) {
 fn list(cap=8) {
   "Creates a new empty dynamic list with initial capacity CAP."
     ;; Cap is tagged. Size = 24 + cap * 8 (tagged arithmetic handles it)
+
     def p = malloc(24 + cap * 8)
     store64(p, 100);     "L" tag
+
+    ;; TODO Important
+    ; def p = (malloc (* 8 (+ 24 cap)))
+    ; def p = (quote (malloc (* 8 (+ 24 cap))))
+    ; (store64 p 100);     "L" tag
+
+
     store64(p + 8, 0);    Count (raw 0)
     store64(p + 16, cap); Cap
     return p
 }
 
-fn is_ptr(x){ return rt_is_ptr(x) }
-fn is_int(x){ return rt_is_ptr(x) == false }; heuristic
+fn ptr?(x){ return rt-ptr?(x) }
+fn int?(x){ return rt-ptr?(x) == false }; heuristic
 
 fn is_num(x) {
   "Checks if a value is a number (integer) rather than a pointer."
@@ -517,6 +525,7 @@ fn file_remove(path) {
   "Deletes the file at the specified path. System call."
     return rt_syscall(87, path, 0, 0, 0, 0, 0); unlink
 }
+
 fn cwd() {
   "Returns the current working directory as a string."
     def buf = malloc(4096)
