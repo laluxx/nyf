@@ -8,7 +8,9 @@ import GHC.Generics (Generic)
 
 data Decl
   = UseDecl Text (Maybe Text)
-  | DefineDecl Text Expr
+  | DefineDecl [Text] Expr
+  | AssignDecl Expr Expr                    -- Add this line
+  | CompoundAssignDecl Expr CompoundOp Expr -- Add this line
   | FnDecl Text [Param] (Maybe Text) (Maybe DocString) [Stmt]
   | LayoutDecl Text [LayoutField]
   | ExprDecl Expr

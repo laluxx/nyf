@@ -11,6 +11,11 @@ import Parser (file)
 import System.CPUTime (getCPUTime)
 import Text.Printf (printf)
 
+--- TODO Passed % [0/2]
+-- [ ] Show the % of the passed/not-passed tests in SUMMARY
+-- [ ] Show the % of the correctly passed lines of the last FAIL <file>
+
+
 --- ANSI Color Codes
 
 colorReset, colorRed, colorGreen, colorYellow, colorBlue :: String

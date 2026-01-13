@@ -104,6 +104,20 @@ identifier = try $ lexeme (p >>= check)
               then fail $ "keyword cannot be identifier: " ++ T.unpack x
               else return x
 
+identifierList :: Parser [Text]
+identifierList = do
+  first <- identifier
+  -- Look ahead to see if there's a comma or another identifier
+  choice
+    [ do
+        symbol ","
+        rest <- identifier `sepBy1` symbol ","
+        return (first : rest)
+    , do
+        rest <- many identifier
+        return (first : rest)
+    ]
+
 --- Literals
 
 integer :: Parser Integer
@@ -157,42 +171,60 @@ fstringLiteral = lexeme $ do
 
 --- Top-level
 
+exprOrAssignDecl :: Parser Decl
+exprOrAssignDecl = try assignmentDecl <|> pureExprDecl
+
+assignmentDecl :: Parser Decl
+assignmentDecl = do
+  lhs <- term >>= postfix
+  choice
+    [ do
+        op <- compoundAssignOp
+        rhs <- expr
+        optStmtSep
+        return $ CompoundAssignDecl lhs op rhs
+    , do
+        symbol "="
+        rhs <- expr
+        optStmtSep
+        return $ AssignDecl lhs rhs
+    ]
+
+pureExprDecl :: Parser Decl
+pureExprDecl = do
+  e <- expr
+  optStmtSep
+  return $ ExprDecl e
+
+compoundAssignOp :: Parser CompoundOp
+compoundAssignOp = choice
+  [ try (symbol "+=" $> AddAssign)
+  , try (symbol "-=" $> SubAssign)
+  , try (symbol "*=" $> MulAssign)
+  , try (symbol "/=" $> DivAssign)
+  , try (symbol "%=" $> ModAssign)
+  , try (symbol "&=" $> AndAssign)
+  , try (symbol "|=" $> OrAssign)
+  , try (symbol "^=" $> XorAssign)
+  , try (symbol "<<=" $> LShiftAssign)
+  , try (symbol ">>=" $> RShiftAssign)
+  ]
+
 file :: Parser [Decl]
-file = sc *> many topLevel <* eof
+file = sc *> many (topLevel <* sc) <* eof  -- Add 'sc' after each topLevel
   where
     topLevel = choice
       [ try useAsDecl
       , try defineDecl
       , try layoutDecl
       , try fnDecl
-      , try exprDecl
-      , defError  -- Add this to catch 'def' at top level
+      , defError
+      , exprOrAssignDecl
       ]
 
     defError = do
       try (symbol "def")
       fail "Cannot use 'def' in global scope. Use 'define' for global variables instead."
-
-    exprDecl = do
-      e <- expr
-      optStmtSep
-      return $ ExprDecl e
-
--- file :: Parser [Decl]
--- file = sc *> many topLevel <* eof
---   where
---     topLevel = choice
---       [ try useAsDecl
---       , try defineDecl
---       , try layoutDecl
---       , try fnDecl
---       , exprDecl  -- Add this
---       ]
-
---     exprDecl = do
---       e <- expr
---       optStmtSep
---       return $ ExprDecl e
 
 useAsDecl :: Parser Decl
 useAsDecl = do
@@ -205,10 +237,12 @@ useAsDecl = do
 
 defineDecl :: Parser Decl
 defineDecl = do
-  symbol "define"
-  name <- identifier
-  symbol "="
-  DefineDecl name <$> expr
+     symbol "define"
+     names <- identifierList
+     symbol "="
+     e <- expr
+     optStmtSep
+     return $ DefineDecl names e
 
 layoutDecl :: Parser Decl
 layoutDecl = do
@@ -288,12 +322,12 @@ fnStmtDecl = do
 
 defStmt :: Parser Stmt
 defStmt = do
-  symbol "def"
-  names <- identifier `sepBy1` symbol ","
-  symbol "="
-  e <- expr
-  optStmtSep
-  return $ VarDecl names e
+     symbol "def"
+     names <- identifierList
+     symbol "="
+     e <- expr
+     optStmtSep
+     return $ VarDecl names e
 
 assignOrExprStmt :: Parser Stmt
 assignOrExprStmt = try assignStmt <|> exprStmt
@@ -359,9 +393,19 @@ whileStmt = do
 forStmt :: Parser Stmt
 forStmt = do
   symbol "for"
-  var <- parens identifier <|> identifier
-  symbol "in"
-  iterable <- expr
+  (var, iterable) <-
+    -- Try: for (var in iterable)
+    try (parens $ do
+      v <- identifier
+      symbol "in"
+      i <- expr
+      return (v, i))
+    -- Or: for var in iterable
+    <|> do
+      v <- identifier
+      symbol "in"
+      i <- expr
+      return (v, i)
   body <- braces (many stmt)
   return $ ForStmt var iterable body
 
@@ -507,7 +551,6 @@ term = choice
   , try inferredMember
   , try asmExpr
   , try embedExpr
-  , try comptimeExpr
   , try lambdaExpr
   , try fnExpr
   , try (parens tupleOrExpr)

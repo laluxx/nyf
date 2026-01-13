@@ -1,5 +1,7 @@
-define a, b, c = 100
+define a b c = 100
+define d, f, g = 100
 
 fn main() {
-    def d, e, f = 20
+    def h i j = 20
+    def k, l, m = 20
 }

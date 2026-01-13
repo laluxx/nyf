@@ -23,6 +23,17 @@ nyf help
 
 * TODO Potential new syntax [0/3]
 
+** TODO wrap [FlAG] to generates a .ny file from an .h file
+   we SHOULD cache wrappers ahead of time, this allow something like this to work:
+   #+begin_src nytrix
+   use raylib.h
+
+   BeginDrawing()
+   ClearBackground(0xFF181818)
+   EndDrawing()
+
+   #+end_src
+
 ** TODO Hashmap
 
 @Laluxx
@@ -33,7 +44,7 @@ But the second should also be supported and the default.
    define Hashmap = { meow: 1
                       ciao: 2
                       ciao: 3
-                      define: 4 }
+                      name: 4 }
    #+end_src
 
    #+begin_src nytrix
@@ -41,14 +52,6 @@ But the second should also be supported and the default.
                       "ciao": 2
                       "ciao": 3
                       "define": 4 }
-   #+end_src
-
-** TODO Sets
-
-Sets MUST Start with #, #{} is the empty set.
-
-   #+begin_src nytrix
-   define Set  = #{1, "hello", true}; <- This is a set!
    #+end_src
 
 ** TODO Switch Case
