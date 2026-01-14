@@ -10,7 +10,7 @@
 ;;;;;; TODO H4 [2/3]
   ;; - [X] Checklist 1
   ;; - [X] Checklist 2
-  ;; - [X] Checklist 3
+  ;; - [ ] Checklist 3
 ;;;;;;; H5
 ;;;;;;;; H6
 ;;;;;;;;; H7

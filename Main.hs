@@ -113,7 +113,6 @@ runTests = do
 
 --- PROJECT SCAFFOLDING
 
--- | Create a new Nytrix project with standard structure
 createNewProject :: String -> IO ()
 createNewProject projectName = do
   -- Validate project name
@@ -134,6 +133,15 @@ createNewProject projectName = do
   putStrLn $ "Creating new Nytrix project: " ++ projectName
   putStrLn ""
 
+  -- Get git info
+  mGitUser <- getGitRemote
+  mUserName <- getGitUserName
+  mUserEmail <- getGitUserEmail
+
+  let gitUser = maybe "username" id mGitUser
+      userName = maybe "Your Name" id mUserName
+      userEmail = maybe "your.email@example.com" id mUserEmail
+
   -- Create directory structure
   createDirectory projectName
   createDirectory (projectName </> "src")
@@ -151,6 +159,11 @@ createNewProject projectName = do
   let configPath = projectName </> "format.yaml"
   TIO.writeFile configPath formatYamlTemplate
   putStrLn $ "✓ Created file: " ++ configPath
+
+  -- Create package.yaml with git info
+  let packagePath = projectName </> "package.yaml"
+  TIO.writeFile packagePath (packageYamlTemplate projectName gitUser userName userEmail)
+  putStrLn $ "✓ Created file: " ++ packagePath
 
   -- Create README.md
   let readmePath = projectName </> "README.md"
@@ -275,7 +288,6 @@ extractGithubUsername url
 trim :: String -> String
 trim = dropWhileEnd isSpace . dropWhile isSpace
 
--- Updated template with actual user info
 packageYamlTemplate :: String -> String -> String -> String -> T.Text
 packageYamlTemplate projectName gitUser userName userEmail = T.unlines
   [ "name:                " <> T.pack projectName
@@ -285,11 +297,11 @@ packageYamlTemplate projectName gitUser userName userEmail = T.unlines
   , "author:              \"" <> T.pack userName <> "\""
   , "maintainer:          \"" <> T.pack userEmail <> "\""
   , "copyright:           \"2026 " <> T.pack userName <> "\""
-  , ""
+  , "extra-source-files:"
   , "description:         A Nytrix project"
   , ""
   , "dependencies:"
-  , "- nytrix-std >= 0.1.0"
+  , "- core >= 4.7 && < 5"
   , ""
   , "nytrix-options:"
   , "- -Wall"
