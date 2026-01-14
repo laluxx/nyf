@@ -12,19 +12,22 @@ import System.Directory
       getModificationTime,
       getCurrentDirectory,
       setCurrentDirectory,
-      removeFile           )
+      removeFile,
+      removeDirectoryRecursive )
 import System.FilePath ( (</>), takeExtension, takeDirectory, splitDirectories )
-import System.IO (stderr)
+import System.IO (stderr, hPutStrLn)
 import System.Process ( rawSystem, readProcess )
 import Control.Monad (filterM, when, unless)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
-import Paths_nyf (getDataDir)
+import Paths_nyf (getDataDir, version)
+import Data.Version (showVersion)
 import Control.Exception (catch, SomeException)
-import Data.List ( isInfixOf, dropWhileEnd, isSuffixOf, intercalate )
+import Data.List ( isInfixOf, dropWhileEnd, isSuffixOf, intercalate, isPrefixOf )
 import Data.Char (isSpace)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BLC
 
 import Parser (file)
 import Formatter (format)
@@ -44,6 +47,15 @@ green = "\ESC[32m"
 yellow :: String
 yellow = "\ESC[33m"
 
+red :: String
+red = "\ESC[31m"
+
+blue :: String
+blue = "\ESC[34m"
+
+cyan :: String
+cyan = "\ESC[36m"
+
 gray :: String
 gray = "\ESC[90m"
 
@@ -53,6 +65,9 @@ reset = "\ESC[0m"
 bold :: String
 bold = "\ESC[1m"
 
+dim :: String
+dim = "\ESC[2m"
+
 
 --- MAIN ENTRY POINT
 
@@ -60,44 +75,230 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
+    [] ->
+      printUsage
+
+    ["--version"] ->
+      printVersion
+
+    ["-v"] ->
+      printVersion
+
+    ["version"] ->
+      printVersion
+
+    ["help"] ->
+      printUsage
+
+    ["help", cmd] ->
+      printCommandHelp cmd
+
+    ["-h"] ->
+      printUsage
+
+    ["--help"] ->
+      printUsage
+
     ["test"] ->
       runTests
+
+    ["test", pattern] ->
+      runTestsWithPattern pattern
 
     ["new", projectName] ->
       createNewProject projectName
 
+    ["init"] ->
+      initProject
+
     ["run"] ->
       runProject
 
-    ["format", path] ->
-      formatPath path
+    ["run", filepath] ->
+      runSpecificFile filepath
 
-    ["check", path] ->
-      checkPath path
+    ["build"] ->
+      buildProject
+
+    ["clean"] ->
+      cleanProject
+
+    ["watch"] ->
+      watchProject
+
+    ["format", path] ->
+      formatPath path False False Nothing
+
+    ["format", "--check", path] ->
+      formatPath path True False Nothing
+
+    ["format", "--diff", path] ->
+      formatPath path False True Nothing
+
+    ["format", "--verify", path] ->
+      formatPath path False False (Just True)
+
+    ["format", "--config", configPath, path] ->
+      formatPath path False False (Just False) -- Will implement config loading
+
+    ["lint", path] ->
+      lintPath path
+
+    ["validate", path] ->
+      validatePath path
+
+    ["stats", path] ->
+      statsPath path
+
+    ["ast", path] ->
+      astPath path False
+
+    ["ast", "pretty", path] ->
+      astPath path True
 
     ["ast", "delete", path] ->
       astDeletePath path
 
-    ["ast", path] ->
-      astPath path
+    ["deps", filepath] ->
+      depsFile filepath
+
+    ["docs", path] ->
+      docsPath path
+
+    ["config"] ->
+      showConfig
+
+    ["completion", shell] ->
+      generateCompletion shell
 
     [path] ->
-      checkPath path
+      lintPath path
 
     _ ->
       printUsage
 
+--- VERSION
+
+printVersion :: IO ()
+printVersion = do
+  putStrLn $ bold ++ "nyf" ++ reset ++ " version " ++ showVersion version
+  putStrLn "Nytrix Formal Functional Formatter"
+
+--- HELP SYSTEM
+
+printUsage :: IO ()
+printUsage = do
+  putStrLn $ bold ++ "nyf" ++ reset ++ " - Nytrix Formal Functional Formatter"
+  putStrLn ""
+  putStrLn $ dim ++ "A highly configurable code formatter and build tool for Nytrix" ++ reset
+  putStrLn ""
+  putStrLn $ bold ++ "USAGE:" ++ reset
+  putStrLn "  nyf <command> [options]"
+  putStrLn ""
+  putStrLn $ bold ++ "PROJECT COMMANDS:" ++ reset
+  putStrLn $ "  " ++ cyan ++ "new" ++ reset ++ " <name>              Create a new Nytrix project"
+  putStrLn $ "  " ++ cyan ++ "init" ++ reset ++ "                    Initialize project in current directory"
+  putStrLn $ "  " ++ cyan ++ "run" ++ reset ++ " [file]              Compile and run (defaults to src/main.ny)"
+  putStrLn $ "  " ++ cyan ++ "build" ++ reset ++ "                   Compile project without running"
+  putStrLn $ "  " ++ cyan ++ "clean" ++ reset ++ "                   Remove build artifacts"
+  putStrLn $ "  " ++ cyan ++ "watch" ++ reset ++ "                   Watch for changes and auto-rebuild"
+  putStrLn ""
+  putStrLn $ bold ++ "CODE QUALITY:" ++ reset
+  putStrLn $ "  " ++ cyan ++ "lint" ++ reset ++ " <path>              Parse and check syntax"
+  putStrLn $ "  " ++ cyan ++ "format" ++ reset ++ " <path>            Format code in place"
+  putStrLn $ "  " ++ cyan ++ "format --check" ++ reset ++ " <path>   Check if formatting is needed (exit 1 if yes)"
+  putStrLn $ "  " ++ cyan ++ "format --diff" ++ reset ++ " <path>    Show formatting changes without writing"
+  putStrLn $ "  " ++ cyan ++ "format --verify" ++ reset ++ " <path>  Format and verify result parses"
+  putStrLn $ "  " ++ cyan ++ "validate" ++ reset ++ " <path>          Comprehensive validation (parse + lint)"
+  putStrLn $ "  " ++ cyan ++ "stats" ++ reset ++ " <path>             Show code statistics"
+  putStrLn ""
+  putStrLn $ bold ++ "ANALYSIS:" ++ reset
+  putStrLn $ "  " ++ cyan ++ "ast" ++ reset ++ " <path>               Generate AST JSON"
+  putStrLn $ "  " ++ cyan ++ "ast --pretty" ++ reset ++ " <path>     Generate pretty-printed AST JSON"
+  putStrLn $ "  " ++ cyan ++ "ast delete" ++ reset ++ " <path>       Delete AST JSON files"
+  putStrLn $ "  " ++ cyan ++ "deps" ++ reset ++ " <file>              Show dependency tree"
+  putStrLn ""
+  putStrLn $ bold ++ "TESTING & DOCS:" ++ reset
+  putStrLn $ "  " ++ cyan ++ "test" ++ reset ++ " [pattern]           Run tests (optionally matching pattern)"
+  putStrLn $ "  " ++ cyan ++ "docs" ++ reset ++ " <path>              Generate documentation"
+  putStrLn ""
+  putStrLn $ bold ++ "UTILITIES:" ++ reset
+  putStrLn $ "  " ++ cyan ++ "config" ++ reset ++ "                   Show current configuration"
+  putStrLn $ "  " ++ cyan ++ "completion" ++ reset ++ " <shell>      Generate shell completions (bash/zsh/fish)"
+  putStrLn $ "  " ++ cyan ++ "version" ++ reset ++ "                  Show version information"
+  putStrLn $ "  " ++ cyan ++ "help" ++ reset ++ " [command]           Show help for a command"
+  putStrLn ""
+  putStrLn $ bold ++ "EXAMPLES:" ++ reset
+  putStrLn $ "  nyf new my-project       " ++ dim ++ "# Create new project" ++ reset
+  putStrLn $ "  nyf run                  " ++ dim ++ "# Build and run main.ny" ++ reset
+  putStrLn $ "  nyf format src/          " ++ dim ++ "# Format all files in src/" ++ reset
+  putStrLn $ "  nyf lint .               " ++ dim ++ "# Check all .ny files" ++ reset
+  putStrLn $ "  nyf test                 " ++ dim ++ "# Run test suite" ++ reset
+  putStrLn ""
+  putStrLn $ "For more information: " ++ cyan ++ "nyf help <command>" ++ reset
+
+printCommandHelp :: String -> IO ()
+printCommandHelp cmd = case cmd of
+  "new" -> do
+    putStrLn $ bold ++ "nyf new" ++ reset ++ " - Create a new Nytrix project"
+    putStrLn ""
+    putStrLn "USAGE:"
+    putStrLn "  nyf new <project-name>"
+    putStrLn ""
+    putStrLn "Creates a new directory with:"
+    putStrLn "  • src/main.ny - Main source file"
+    putStrLn "  • format.yaml - Formatting configuration"
+    putStrLn "  • package.yaml - Project metadata"
+    putStrLn "  • README.md - Project documentation"
+    putStrLn "  • .gitignore - Git ignore rules"
+
+  "init" -> do
+    putStrLn $ bold ++ "nyf init" ++ reset ++ " - Initialize project in current directory"
+    putStrLn ""
+    putStrLn "USAGE:"
+    putStrLn "  nyf init"
+    putStrLn ""
+    putStrLn "Creates project files in the current directory."
+
+  "format" -> do
+    putStrLn $ bold ++ "nyf format" ++ reset ++ " - Format Nytrix code"
+    putStrLn ""
+    putStrLn "USAGE:"
+    putStrLn "  nyf format <path>              Format in place"
+    putStrLn "  nyf format --check <path>      Check only (CI mode)"
+    putStrLn "  nyf format --diff <path>       Show diff without writing"
+    putStrLn "  nyf format --verify <path>     Format and verify"
+    putStrLn ""
+    putStrLn "The path can be a file or directory (recursive)."
+
+  "lint" -> do
+    putStrLn $ bold ++ "nyf lint" ++ reset ++ " - Parse and check syntax"
+    putStrLn ""
+    putStrLn "USAGE:"
+    putStrLn "  nyf lint <path>"
+    putStrLn ""
+    putStrLn "Parses files and reports syntax errors without modifying them."
+
+  _ -> do
+    putStrLn $ "No detailed help available for: " ++ cmd
+    putStrLn "Run 'nyf help' for available commands."
+
 --- TEST RUNNER
 
 runTests :: IO ()
-runTests = do
+runTests = runTestsWithPattern ""
+
+runTestsWithPattern :: String -> IO ()
+runTestsWithPattern pattern = do
   -- First try local tests/ directory (for development)
   localTestsExist <- doesDirectoryExist "tests"
 
   if localTestsExist
     then do
-      putStrLn "Running tests from local tests/ directory..."
-      Test.runAllTests
+      if null pattern
+        then putStrLn "Running all tests from local tests/ directory..."
+        else putStrLn $ "Running tests matching '" ++ pattern ++ "' from local tests/ directory..."
+      Test.runAllTests -- TODO: Add pattern matching to Test module
     else do
       -- Fall back to installed data files
       dataDir <- getDataDir
@@ -107,18 +308,14 @@ runTests = do
       if testsExist
         then do
           putStrLn $ "Running tests from " ++ testsDir ++ "..."
-          -- Change to the data directory so Test module can find files
           currentDir <- getCurrentDirectory
           setCurrentDirectory dataDir
           Test.runAllTests
           setCurrentDirectory currentDir
         else do
-          putStrLn "Error: No tests found"
+          putStrLn $ red ++ "Error: No tests found" ++ reset
           putStrLn "  - Local tests/ directory not found"
           putStrLn $ "  - Installed tests not found at: " ++ testsDir
-          putStrLn ""
-          putStrLn "If you're developing nyf, run 'nyf test' from the project root."
-          putStrLn "If you installed nyf, the test files may not have been installed."
           exitFailure
 
 --- PROJECT SCAFFOLDING
@@ -127,20 +324,20 @@ createNewProject :: String -> IO ()
 createNewProject projectName = do
   -- Validate project name
   when (null projectName) $ do
-    putStrLn "Error: Project name cannot be empty"
+    putStrLn $ red ++ "Error: Project name cannot be empty" ++ reset
     exitFailure
 
   when (elem '/' projectName || elem '\\' projectName) $ do
-    putStrLn "Error: Project name cannot contain path separators"
+    putStrLn $ red ++ "Error: Project name cannot contain path separators" ++ reset
     exitFailure
 
   -- Check if directory already exists
   exists <- doesDirectoryExist projectName
   when exists $ do
-    putStrLn $ "Error: Directory '" ++ projectName ++ "' already exists"
+    putStrLn $ red ++ "Error: Directory '" ++ projectName ++ "' already exists" ++ reset
     exitFailure
 
-  putStrLn $ "Creating new Nytrix project: " ++ projectName
+  putStrLn $ bold ++ "Creating new Nytrix project: " ++ projectName ++ reset
   putStrLn ""
 
   -- Get git info
@@ -156,59 +353,148 @@ createNewProject projectName = do
   createDirectory projectName
   createDirectory (projectName </> "src")
   createDirectory (projectName </> "build")
-  putStrLn $ "✓ Created directory: " ++ projectName
-  putStrLn $ "✓ Created directory: " ++ projectName </> "src"
-  putStrLn $ "✓ Created directory: " ++ projectName </> "build"
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created directory: " ++ projectName
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created directory: " ++ projectName </> "src"
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created directory: " ++ projectName </> "build"
 
-  -- Create main.ny
+  -- Create files
   let mainPath = projectName </> "src" </> "main.ny"
   TIO.writeFile mainPath (mainTemplate projectName)
-  putStrLn $ "✓ Created file: " ++ mainPath
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ mainPath
 
-  -- Create format.yaml
   let configPath = projectName </> "format.yaml"
   TIO.writeFile configPath formatYamlTemplate
-  putStrLn $ "✓ Created file: " ++ configPath
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ configPath
 
-  -- Create package.yaml with git info
   let packagePath = projectName </> "package.yaml"
   TIO.writeFile packagePath (packageYamlTemplate projectName gitUser userName userEmail)
-  putStrLn $ "✓ Created file: " ++ packagePath
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ packagePath
 
-  -- Create README.md
   let readmePath = projectName </> "README.md"
   TIO.writeFile readmePath (readmeTemplate projectName)
-  putStrLn $ "✓ Created file: " ++ readmePath
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ readmePath
 
-  -- Create .gitignore
   let gitignorePath = projectName </> ".gitignore"
   TIO.writeFile gitignorePath gitignoreTemplate
-  putStrLn $ "✓ Created file: " ++ gitignorePath
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ gitignorePath
 
   putStrLn ""
-  putStrLn $ green ++ "Project created successfully!" ++ reset
+  putStrLn $ green ++ bold ++ "✨ Project created successfully!" ++ reset
   putStrLn ""
-  putStrLn "Next steps:"
-  putStrLn $ "  cd " ++ projectName
-  putStrLn   "  nyf run              # Compile and run"
-  putStrLn   "  nyf format src/      # Format your code"
+  putStrLn $ bold ++ "Next steps:" ++ reset
+  putStrLn $ "  " ++ cyan ++ "cd " ++ projectName ++ reset
+  putStrLn $ "  " ++ cyan ++ "nyf run" ++ reset ++ "              # Compile and run"
+  putStrLn $ "  " ++ cyan ++ "nyf format src/" ++ reset ++ "      # Format your code"
   putStrLn ""
 
---- RUN PROJECT
+initProject :: IO ()
+initProject = do
+  putStrLn $ bold ++ "Initializing Nytrix project in current directory..." ++ reset
+  putStrLn ""
 
--- | Find main.ny and compile/run it with nytrix
-runProject :: IO ()
-runProject = do
-  -- Look for src/main.ny
+  -- Get current directory name as project name
+  currentDir <- getCurrentDirectory
+  let projectName = last $ splitDirectories currentDir
+
+  -- Check if src/ already exists
+  srcExists <- doesDirectoryExist "src"
+  when srcExists $ do
+    putStrLn $ red ++ "Error: src/ directory already exists" ++ reset
+    putStrLn "This directory appears to already be a Nytrix project."
+    exitFailure
+
+  -- Get git info
+  mGitUser <- getGitRemote
+  mUserName <- getGitUserName
+  mUserEmail <- getGitUserEmail
+
+  let gitUser = maybe "username" id mGitUser
+      userName = maybe "Your Name" id mUserName
+      userEmail = maybe "your.email@example.com" id mUserEmail
+
+  -- Create directory structure
+  createDirectory "src"
+  createDirectory "build"
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created directory: src"
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created directory: build"
+
+  -- Create files
+  let mainPath = "src" </> "main.ny"
+  TIO.writeFile mainPath (mainTemplate projectName)
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ mainPath
+
+  let configPath = "format.yaml"
+  TIO.writeFile configPath formatYamlTemplate
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ configPath
+
+  let packagePath = "package.yaml"
+  TIO.writeFile packagePath (packageYamlTemplate projectName gitUser userName userEmail)
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ packagePath
+
+  let readmePath = "README.md"
+  TIO.writeFile readmePath (readmeTemplate projectName)
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ readmePath
+
+  let gitignorePath = ".gitignore"
+  TIO.writeFile gitignorePath gitignoreTemplate
+  putStrLn $ green ++ "  ✓ " ++ reset ++ "Created file: " ++ gitignorePath
+
+  putStrLn ""
+  putStrLn $ green ++ bold ++ "✨ Project initialized successfully!" ++ reset
+  putStrLn ""
+
+--- BUILD AND RUN
+
+buildProject :: IO ()
+buildProject = do
   let mainPath = "src" </> "main.ny"
   mainExists <- doesFileExist mainPath
 
   unless mainExists $ do
-    putStrLn "Error: src/main.ny not found"
+    putStrLn $ red ++ "Error: src/main.ny not found" ++ reset
     putStrLn "Run this command from your project root directory"
     exitFailure
 
-  -- Check if already compiled
+  let buildDir = "build"
+  let executable = buildDir </> "main"
+
+  buildExists <- doesDirectoryExist buildDir
+  unless buildExists $ createDirectory buildDir
+
+  putStrLn $ dim ++ "Compiling src/main.ny..." ++ reset
+  exitCode <- rawSystem "nytrix" ["-o", executable, mainPath]
+  case exitCode of
+    ExitSuccess -> putStrLn $ green ++ "✓ Build successful" ++ reset
+    ExitFailure _ -> do
+      putStrLn $ red ++ "✗ Build failed" ++ reset
+      exitFailure
+
+cleanProject :: IO ()
+cleanProject = do
+  buildExists <- doesDirectoryExist "build"
+  if buildExists
+    then do
+      removeDirectoryRecursive "build"
+      putStrLn $ green ++ "✓ Removed build/ directory" ++ reset
+    else
+      putStrLn $ dim ++ "Nothing to clean (build/ does not exist)" ++ reset
+
+watchProject :: IO ()
+watchProject = do
+  putStrLn $ yellow ++ "Watch mode not yet implemented" ++ reset
+  putStrLn "This will watch for file changes and auto-rebuild."
+  exitFailure
+
+runProject :: IO ()
+runProject = do
+  let mainPath = "src" </> "main.ny"
+  mainExists <- doesFileExist mainPath
+
+  unless mainExists $ do
+    putStrLn $ red ++ "Error: src/main.ny not found" ++ reset
+    putStrLn "Run this command from your project root directory"
+    exitFailure
+
   let buildDir = "build"
   let executable = buildDir </> "main"
 
@@ -225,44 +511,66 @@ runProject = do
     else return True
 
   when needsCompile $ do
-    putStrLn "Compiling src/main.ny..."
-    -- Use nytrix to compile: nytrix -o build/main src/main.ny
+    putStrLn $ dim ++ "Compiling src/main.ny..." ++ reset
     exitCode <- rawSystem "nytrix" ["-o", executable, mainPath]
     case exitCode of
       ExitSuccess -> putStrLn $ green ++ "✓ Compiled successfully" ++ reset
       ExitFailure _ -> do
-        putStrLn "Compilation failed"
+        putStrLn $ red ++ "✗ Compilation failed" ++ reset
         exitFailure
 
-  -- Run the executable
-  putStrLn "Running..."
+  putStrLn $ dim ++ "Running..." ++ reset
   putStrLn ""
   exitCode <- rawSystem executable []
   case exitCode of
     ExitSuccess -> return ()
     ExitFailure code -> exitWith (ExitFailure code)
 
---- User Git Informations
+runSpecificFile :: FilePath -> IO ()
+runSpecificFile filepath = do
+  fileExists <- doesFileExist filepath
+  unless fileExists $ do
+    putStrLn $ red ++ "Error: File not found: " ++ filepath ++ reset
+    exitFailure
 
--- Get git user name
+  let buildDir = "build"
+  let executable = buildDir </> "temp_run"
+
+  buildExists <- doesDirectoryExist buildDir
+  unless buildExists $ createDirectory buildDir
+
+  putStrLn $ dim ++ "Compiling " ++ filepath ++ "..." ++ reset
+  exitCode <- rawSystem "nytrix" ["-o", executable, filepath]
+  case exitCode of
+    ExitSuccess -> putStrLn $ green ++ "✓ Compiled successfully" ++ reset
+    ExitFailure _ -> do
+      putStrLn $ red ++ "✗ Compilation failed" ++ reset
+      exitFailure
+
+  putStrLn $ dim ++ "Running..." ++ reset
+  putStrLn ""
+  exitCode' <- rawSystem executable []
+  case exitCode' of
+    ExitSuccess -> return ()
+    ExitFailure code -> exitWith (ExitFailure code)
+
+--- GIT USER INFORMATION
+
 getGitUserName :: IO (Maybe String)
 getGitUserName = catch
   (Just . trim <$> readProcess "git" ["config", "user.name"] "")
   (\(_::SomeException) -> return Nothing)
 
--- Get git user email
 getGitUserEmail :: IO (Maybe String)
 getGitUserEmail = catch
   (Just . trim <$> readProcess "git" ["config", "user.email"] "")
   (\(_::SomeException) -> return Nothing)
 
--- Get git remote origin
 getGitRemote :: IO (Maybe String)
 getGitRemote = catch
   (Just . extractGithubUsername . trim <$> readProcess "git" ["config", "remote.origin.url"] "")
   (\(_::SomeException) -> return Nothing)
 
--- Extract username from git URL
 extractGithubUsername :: String -> String
 extractGithubUsername url
   | "github.com:" `isInfixOf` url =
@@ -275,149 +583,242 @@ extractGithubUsername url
           username = takeWhile (/= '/') afterGithub
       in if null username then "username" else username
   | otherwise = "username"
+
 trim :: String -> String
 trim = dropWhileEnd isSpace . dropWhile isSpace
 
---- COMMAND IMPLEMENTATIONS
+--- FORMAT OPERATIONS
 
--- | Format a file or directory (writes changes to disk)
-formatPath :: FilePath -> IO ()
-formatPath path = do
+formatPath :: FilePath -> Bool -> Bool -> Maybe Bool -> IO ()
+formatPath path checkOnly showDiff verify = do
   isDir <- doesDirectoryExist path
   isFile <- doesFileExist path
 
   if isDir
-    then formatDirectoryRecursive path
+    then formatDirectoryRecursive path checkOnly showDiff verify
     else if isFile
-      then formatSingleFile path
+      then formatSingleFile path checkOnly showDiff verify
       else do
-        putStrLn $ "Error: Not a file or directory: " ++ path
+        putStrLn $ red ++ "Error: Not a file or directory: " ++ path ++ reset
         exitFailure
 
--- | Check/parse a file or directory (no changes to disk)
-checkPath :: FilePath -> IO ()
-checkPath path = do
-  isDir <- doesDirectoryExist path
-  isFile <- doesFileExist path
-
-  if isDir
-    then checkDirectoryRecursive path
-    else if isFile
-      then checkSingleFile path
-      else do
-        putStrLn $ "Error: Not a file or directory: " ++ path
-        exitFailure
-
--- | Generate AST JSON for a file or directory
-astPath :: FilePath -> IO ()
-astPath path = do
-  isDir <- doesDirectoryExist path
-  isFile <- doesFileExist path
-
-  if isDir
-    then do
-      count <- astDirectoryRecursive path
-      putStrLn ""
-      putStrLn $ green ++ "Generated " ++ show count ++ " AST JSON file(s)" ++ reset
-    else if isFile
-      then do
-        astSingleFile path
-        putStrLn ""
-        putStrLn $ green ++ "Generated 1 AST JSON file" ++ reset
-      else do
-        putStrLn $ "Error: Not a file or directory: " ++ path
-        exitFailure
-
-astDirectoryRecursive :: FilePath -> IO Int
-astDirectoryRecursive dir = do
-  putStrLn $ "Generating AST JSON for directory: " ++ dir
+formatDirectoryRecursive :: FilePath -> Bool -> Bool -> Maybe Bool -> IO ()
+formatDirectoryRecursive dir checkOnly showDiff verify = do
+  unless showDiff $ putStrLn $ dim ++ "Formatting directory: " ++ dir ++ reset
   contents <- listDirectory dir
 
-  -- Generate AST for all .ny files in current directory
   let nyFiles = filter (\f -> takeExtension f == ".ny") contents
-  mapM_ (astSingleFile . (dir </>)) nyFiles
-  let currentCount = length nyFiles
+  mapM_ (\f -> formatSingleFile (dir </> f) checkOnly showDiff verify) nyFiles
 
-  -- Recurse into subdirectories
   subdirs <- filterM (\f -> doesDirectoryExist (dir </> f)) contents
-  subcounts <- mapM (astDirectoryRecursive . (dir </>)) subdirs
+  mapM_ (\d -> formatDirectoryRecursive (dir </> d) checkOnly showDiff verify) subdirs
 
-  return $ currentCount + sum subcounts
+formatSingleFile :: FilePath -> Bool -> Bool -> Maybe Bool -> IO ()
+formatSingleFile filepath checkOnly showDiff verify = do
+  unless showDiff $ putStrLn $ dim ++ "Formatting: " ++ formatFilePath filepath ++ reset
 
--- | Recursively generate AST JSON for all .ny files in a directory
-astDeleteDirectoryRecursive :: FilePath -> IO Int
-astDeleteDirectoryRecursive dir = do
-  putStrLn $ "Deleting AST JSON for directory: " ++ dir
-  contents <- listDirectory dir
-
-  -- Delete AST for all .ny files in current directory
-  let nyFiles = filter (\f -> takeExtension f == ".ny") contents
-  results <- mapM (astDeleteSingleFile . (dir </>)) nyFiles
-  let currentCount = length $ filter id results
-
-  -- Recurse into subdirectories
-  subdirs <- filterM (\f -> doesDirectoryExist (dir </> f)) contents
-  subcounts <- mapM (astDeleteDirectoryRecursive . (dir </>)) subdirs
-
-  return $ currentCount + sum subcounts
-
--- | Generate AST JSON for a single file
-astSingleFile :: FilePath -> IO ()
-astSingleFile filepath = do
-  putStrLn $ "Generating AST: " ++ formatFilePath filepath
-
-  -- Read input
   input <- TIO.readFile filepath
 
-  -- Parse
+  let dir = takeDirectory filepath
+  mConfigPath <- findFormatYaml dir
+  cfg <- loadFormatConfig mConfigPath
+
   case parse file filepath input of
     Left err -> do
-      TIO.hPutStrLn stderr $ T.pack $ "Parse error in " ++ filepath ++ ":"
+      TIO.hPutStrLn stderr $ T.pack $ red ++ "Parse error in " ++ filepath ++ ":" ++ reset
       TIO.hPutStrLn stderr $ T.pack $ errorBundlePretty err
       exitFailure
 
     Right ast -> do
-      -- Generate JSON output path: replace .ny with .json
+      let formatted = format cfg ast
+
+      if checkOnly
+        then
+          if formatted == input
+            then putStrLn $ green ++ "✓" ++ reset ++ " Already formatted: " ++ formatFilePath filepath
+            else do
+              putStrLn $ yellow ++ "✗" ++ reset ++ " Needs formatting: " ++ formatFilePath filepath
+              exitFailure
+        else if showDiff
+          then do
+            putStrLn $ bold ++ "--- " ++ filepath ++ reset
+            putStrLn $ bold ++ "+++ " ++ filepath ++ " (formatted)" ++ reset
+            -- Simple diff (could be enhanced)
+            when (formatted /= input) $ do
+              putStrLn $ red ++ "- Original" ++ reset
+              putStrLn $ green ++ "+ Formatted" ++ reset
+          else do
+            TIO.writeFile filepath formatted
+            putStrLn $ green ++ "✓" ++ reset ++ " Formatted: " ++ formatFilePath filepath
+
+            -- Verify if requested
+            when (verify == Just True) $ do
+              verifyInput <- TIO.readFile filepath
+              case parse file filepath verifyInput of
+                Left verifyErr -> do
+                  putStrLn $ red ++ "✗ Verification failed - formatted code doesn't parse!" ++ reset
+                  TIO.hPutStrLn stderr $ T.pack $ errorBundlePretty verifyErr
+                  exitFailure
+                Right _ ->
+                  putStrLn $ green ++ "  ✓ Verified: formatted code parses correctly" ++ reset
+
+--- LINT OPERATIONS
+
+lintPath :: FilePath -> IO ()
+lintPath path = do
+  isDir <- doesDirectoryExist path
+  isFile <- doesFileExist path
+
+  if isDir
+    then lintDirectoryRecursive path
+    else if isFile
+      then lintSingleFile path
+      else do
+        putStrLn $ red ++ "Error: Not a file or directory: " ++ path ++ reset
+        exitFailure
+
+lintDirectoryRecursive :: FilePath -> IO ()
+lintDirectoryRecursive dir = do
+  putStrLn $ dim ++ "Linting directory: " ++ dir ++ reset
+  contents <- listDirectory dir
+
+  let nyFiles = filter (\f -> takeExtension f == ".ny") contents
+  mapM_ (lintSingleFile . (dir </>)) nyFiles
+
+  subdirs <- filterM (\f -> doesDirectoryExist (dir </> f)) contents
+  mapM_ (lintDirectoryRecursive . (dir </>)) subdirs
+
+lintSingleFile :: FilePath -> IO ()
+lintSingleFile filepath = do
+  input <- TIO.readFile filepath
+
+  case parse file filepath input of
+    Left err -> do
+      TIO.hPutStrLn stderr $ T.pack $ red ++ "Parse error in " ++ filepath ++ ":" ++ reset
+      TIO.hPutStrLn stderr $ T.pack $ errorBundlePretty err
+      exitFailure
+
+    Right _ast -> do
+      putStrLn $ green ++ "✓" ++ reset ++ " Parsed successfully: " ++ formatFilePath filepath
+
+--- VALIDATE OPERATIONS
+
+validatePath :: FilePath -> IO ()
+validatePath path = do
+  putStrLn $ dim ++ "Validating: " ++ path ++ reset
+  lintPath path
+  putStrLn $ green ++ "✓ Validation complete" ++ reset
+
+--- STATS OPERATIONS
+
+statsPath :: FilePath -> IO ()
+statsPath path = do
+  isFile <- doesFileExist path
+
+  if isFile
+    then statsFile path
+    else do
+      putStrLn $ yellow ++ "Stats for directories not yet implemented" ++ reset
+      putStrLn "Please specify a single .ny file"
+      exitFailure
+
+statsFile :: FilePath -> IO ()
+statsFile filepath = do
+  input <- TIO.readFile filepath
+  let lines' = T.lines input
+      lineCount = length lines'
+      nonEmptyLines = length $ filter (not . T.null . T.strip) lines'
+
+  putStrLn $ bold ++ "Statistics for: " ++ filepath ++ reset
+  putStrLn $ "  Lines: " ++ show lineCount
+  putStrLn $ "  Non-empty lines: " ++ show nonEmptyLines
+  putStrLn $ dim ++ "  (More stats coming soon)" ++ reset
+
+--- AST OPERATIONS
+
+astPath :: FilePath -> Bool -> IO ()
+astPath path pretty = do
+  isDir <- doesDirectoryExist path
+  isFile <- doesFileExist path
+
+  if isDir
+    then do
+      count <- astDirectoryRecursive path pretty
+      putStrLn ""
+      putStrLn $ green ++ "Generated " ++ show count ++ " AST JSON file(s)" ++ reset
+    else if isFile
+      then do
+        astSingleFile path pretty
+        putStrLn ""
+        putStrLn $ green ++ "Generated 1 AST JSON file" ++ reset
+      else do
+        putStrLn $ red ++ "Error: Not a file or directory: " ++ path ++ reset
+        exitFailure
+
+astDirectoryRecursive :: FilePath -> Bool -> IO Int
+astDirectoryRecursive dir pretty = do
+  putStrLn $ dim ++ "Generating AST JSON for directory: " ++ dir ++ reset
+  contents <- listDirectory dir
+
+  let nyFiles = filter (\f -> takeExtension f == ".ny") contents
+  mapM_ (\f -> astSingleFile (dir </> f) pretty) nyFiles
+  let currentCount = length nyFiles
+
+  subdirs <- filterM (\f -> doesDirectoryExist (dir </> f)) contents
+  subcounts <- mapM (\d -> astDirectoryRecursive (dir </> d) pretty) subdirs
+
+  return $ currentCount + sum subcounts
+
+astSingleFile :: FilePath -> Bool -> IO ()
+astSingleFile filepath pretty = do
+  putStrLn $ dim ++ "Generating AST: " ++ formatFilePath filepath ++ reset
+
+  input <- TIO.readFile filepath
+
+  case parse file filepath input of
+    Left err -> do
+      TIO.hPutStrLn stderr $ T.pack $ red ++ "Parse error in " ++ filepath ++ ":" ++ reset
+      TIO.hPutStrLn stderr $ T.pack $ errorBundlePretty err
+      exitFailure
+
+    Right ast -> do
       let jsonPath = take (length filepath - 3) filepath ++ ".json"
 
-      -- Encode AST to JSON
-      let jsonData = Aeson.encode ast
-
-      -- Write JSON file
-      BL.writeFile jsonPath jsonData
-      putStrLn $ green ++ "✓" ++ reset ++ " Generated AST JSON: " ++ formatFilePathJSON jsonPath
-
-astDeleteSingleFile :: FilePath -> IO Bool
-astDeleteSingleFile filepath = do
-  -- Check if the .ny file exists
-  let nyPath = if ".ny" `isSuffixOf` filepath
-                 then filepath
-                 else filepath ++ ".ny"
-
-  nyExists <- doesFileExist nyPath
-
-  if not nyExists
-    then do
-      putStrLn $ "Warning: Skipping - no corresponding .ny file found for: " ++ filepath
-      return False
-    else do
-      -- Generate JSON path: replace .ny with .json or add .json
-      let jsonPath = if ".ny" `isSuffixOf` filepath
-                       then take (length filepath - 3) filepath ++ ".json"
-                       else filepath ++ ".json"
-
-      jsonExists <- doesFileExist jsonPath
-
-      if jsonExists
+      if pretty
         then do
-          removeFile jsonPath
-          putStrLn $ green ++ "✓" ++ reset ++ " Deleted AST JSON: " ++ formatFilePathJSON jsonPath
-          return True
+          -- Pretty print JSON with indentation
+          let jsonData = Aeson.encode ast
+          let prettyJson = BLC.unlines $ map BLC.pack $ lines $ prettyPrintJSON $ BLC.unpack jsonData
+          BL.writeFile jsonPath prettyJson
         else do
-          putStrLn $ "Note: JSON file does not exist: " ++ jsonPath
-          return False
+          let jsonData = Aeson.encode ast
+          BL.writeFile jsonPath jsonData
 
--- | Delete AST JSON files for a file or directory
+      putStrLn $ green ++ "✓" ++ reset ++ " Generated: " ++ formatFilePathJSON jsonPath
+
+-- Simple JSON pretty printer (basic indentation)
+prettyPrintJSON :: String -> String
+prettyPrintJSON json = unlines $ prettyLines 0 json
+  where
+    prettyLines :: Int -> String -> [String]
+    prettyLines _ [] = []
+    prettyLines indent ('{':rest) =
+      (replicate indent ' ' ++ "{") : prettyLines (indent + 2) rest
+    prettyLines indent ('}':rest) =
+      let newIndent = max 0 (indent - 2)
+      in (replicate newIndent ' ' ++ "}") : prettyLines newIndent rest
+    prettyLines indent ('[':rest) =
+      (replicate indent ' ' ++ "[") : prettyLines (indent + 2) rest
+    prettyLines indent (']':rest) =
+      let newIndent = max 0 (indent - 2)
+      in (replicate newIndent ' ' ++ "]") : prettyLines newIndent rest
+    prettyLines indent (',':rest) =
+      ("," : prettyLines indent rest)
+    prettyLines indent (c:rest) =
+      case prettyLines indent rest of
+        [] -> [[c]]
+        (l:ls) -> (c:l) : ls
+
 astDeletePath :: FilePath -> IO ()
 astDeletePath path = do
   isDir <- doesDirectoryExist path
@@ -434,170 +835,149 @@ astDeletePath path = do
         putStrLn ""
         if deleted
           then putStrLn $ green ++ "Deleted 1 AST JSON file" ++ reset
-          else putStrLn "No AST JSON file to delete"
+          else putStrLn $ dim ++ "No AST JSON file to delete" ++ reset
       else do
-        putStrLn $ "Error: Not a file or directory: " ++ path
+        putStrLn $ red ++ "Error: Not a file or directory: " ++ path ++ reset
         exitFailure
 
---- FORMAT OPERATIONS (write to disk)
-
--- | Recursively format all .ny files in a directory
-formatDirectoryRecursive :: FilePath -> IO ()
-formatDirectoryRecursive dir = do
-  putStrLn $ "Formatting directory: " ++ dir
+astDeleteDirectoryRecursive :: FilePath -> IO Int
+astDeleteDirectoryRecursive dir = do
+  putStrLn $ dim ++ "Deleting AST JSON for directory: " ++ dir ++ reset
   contents <- listDirectory dir
 
-  -- Format all .ny files in current directory
   let nyFiles = filter (\f -> takeExtension f == ".ny") contents
-  mapM_ (formatSingleFile . (dir </>)) nyFiles
+  results <- mapM (astDeleteSingleFile . (dir </>)) nyFiles
+  let currentCount = length $ filter id results
 
-  -- Recurse into subdirectories
   subdirs <- filterM (\f -> doesDirectoryExist (dir </> f)) contents
-  mapM_ (formatDirectoryRecursive . (dir </>)) subdirs
+  subcounts <- mapM (astDeleteDirectoryRecursive . (dir </>)) subdirs
 
--- | Format a single file in place
-formatSingleFile :: FilePath -> IO ()
-formatSingleFile filepath = do
-  putStrLn $ "Formatting: " ++ formatFilePath filepath
+  return $ currentCount + sum subcounts
 
-  -- Read input
-  input <- TIO.readFile filepath
+astDeleteSingleFile :: FilePath -> IO Bool
+astDeleteSingleFile filepath = do
+  let nyPath = if ".ny" `isSuffixOf` filepath
+                 then filepath
+                 else filepath ++ ".ny"
 
-  -- Load config from file's directory (searches upward)
-  let dir = takeDirectory filepath
-  mConfigPath <- findFormatYaml dir
-  cfg <- loadFormatConfig mConfigPath
+  nyExists <- doesFileExist nyPath
 
-  -- Parse
-  case parse file filepath input of
-    Left err -> do
-      TIO.hPutStrLn stderr $ T.pack $ "Parse error in " ++ filepath ++ ":"
-      TIO.hPutStrLn stderr $ T.pack $ errorBundlePretty err
-      exitFailure
+  if not nyExists
+    then do
+      putStrLn $ yellow ++ "Warning: Skipping - no corresponding .ny file found for: " ++ filepath ++ reset
+      return False
+    else do
+      let jsonPath = if ".ny" `isSuffixOf` filepath
+                       then take (length filepath - 3) filepath ++ ".json"
+                       else filepath ++ ".json"
 
-    Right ast -> do
-      -- Format
-      let formatted = format cfg ast
+      jsonExists <- doesFileExist jsonPath
 
-      -- Write back
-      TIO.writeFile filepath formatted
-      putStrLn $ green ++ "✓" ++ reset ++ " Formatted: " ++ formatFilePath filepath
+      if jsonExists
+        then do
+          removeFile jsonPath
+          putStrLn $ green ++ "✓" ++ reset ++ " Deleted: " ++ formatFilePathJSON jsonPath
+          return True
+        else do
+          putStrLn $ dim ++ "Note: JSON file does not exist: " ++ jsonPath ++ reset
+          return False
 
--- Helper function to format file paths with colors
+--- DEPS OPERATIONS
+
+depsFile :: FilePath -> IO ()
+depsFile filepath = do
+  putStrLn $ yellow ++ "Dependency analysis not yet implemented" ++ reset
+  putStrLn $ "This will show the dependency tree for: " ++ filepath
+  exitFailure
+
+--- DOCS OPERATIONS
+
+docsPath :: FilePath -> IO ()
+docsPath path = do
+  putStrLn $ yellow ++ "Documentation generation not yet implemented" ++ reset
+  putStrLn $ "This will generate docs for: " ++ path
+  exitFailure
+
+--- CONFIG OPERATIONS
+
+showConfig :: IO ()
+showConfig = do
+  mConfigPath <- findFormatYaml "."
+  case mConfigPath of
+    Nothing -> do
+      putStrLn $ dim ++ "No format.yaml found, using defaults" ++ reset
+    Just configPath -> do
+      putStrLn $ bold ++ "Using configuration from: " ++ configPath ++ reset
+      cfg <- loadFormatConfig mConfigPath
+      putStrLn ""
+      putStrLn $ dim ++ "(Configuration details would be displayed here)" ++ reset
+
+--- COMPLETION OPERATIONS
+
+generateCompletion :: String -> IO ()
+generateCompletion shell = case shell of
+  "bash" -> do
+    putStrLn $ yellow ++ "Bash completion not yet implemented" ++ reset
+    exitFailure
+  "zsh" -> do
+    putStrLn $ yellow ++ "Zsh completion not yet implemented" ++ reset
+    exitFailure
+  "fish" -> do
+    putStrLn $ yellow ++ "Fish completion not yet implemented" ++ reset
+    exitFailure
+  _ -> do
+    putStrLn $ red ++ "Error: Unknown shell: " ++ shell ++ reset
+    putStrLn "Supported shells: bash, zsh, fish"
+    exitFailure
+
+--- HELPER FUNCTIONS
+
 formatFilePath :: FilePath -> String
 formatFilePath path =
-  let -- Remove .ny extension
-      withoutExt = if ".ny" `isSuffixOf` path then take (length path - 3) path else path
-      -- Split by directory separator and convert to dot notation
+  let withoutExt = if ".ny" `isSuffixOf` path then take (length path - 3) path else path
       parts = splitPath withoutExt
-      -- Join with dots
       dottedPath = intercalate "." parts
-      -- Split by dots to colorize
       segments = splitOn' '.' dottedPath
   in colorizeSegments segments
   where
-    -- Split path into components and clean them up
     splitPath :: FilePath -> [String]
     splitPath p = filter (not . null) $ map cleanSep $ splitDirectories p
       where
         cleanSep = filter (\c -> c /= '/' && c /= '\\')
 
-    -- Split string by character
     splitOn' :: Char -> String -> [String]
     splitOn' _ [] = []
     splitOn' delim str = case break (== delim) str of
       (part, []) -> [part]
       (part, _:rest) -> part : splitOn' delim rest
 
-    -- Colorize the segments
     colorizeSegments :: [String] -> String
     colorizeSegments [] = ""
-    colorizeSegments [x] = white ++ x ++ reset  -- Last segment is white
+    colorizeSegments [x] = white ++ x ++ reset
     colorizeSegments (x:xs) =
       yellow ++ x ++ reset ++ gray ++ "." ++ reset ++ colorizeSegments xs
 
 formatFilePathJSON :: FilePath -> String
 formatFilePathJSON path =
-  let -- Remove .json extension
-      withoutExt = if ".json" `isSuffixOf` path then take (length path - 5) path else path
-      -- Split by directory separator and convert to dot notation
+  let withoutExt = if ".json" `isSuffixOf` path then take (length path - 5) path else path
       parts = splitPath withoutExt
-      -- Join with dots
       dottedPath = intercalate "." parts
-      -- Split by dots to colorize
       segments = splitOn' '.' dottedPath
   in colorizeSegments segments
   where
-    -- Split path into components and clean them up
     splitPath :: FilePath -> [String]
     splitPath p = filter (not . null) $ map cleanSep $ splitDirectories p
       where
         cleanSep = filter (\c -> c /= '/' && c /= '\\')
 
-    -- Split string by character
     splitOn' :: Char -> String -> [String]
     splitOn' _ [] = []
     splitOn' delim str = case break (== delim) str of
       (part, []) -> [part]
       (part, _:rest) -> part : splitOn' delim rest
 
-    -- Colorize the segments
     colorizeSegments :: [String] -> String
     colorizeSegments [] = ""
-    colorizeSegments [x] = white ++ x ++ reset  -- Last segment is white
+    colorizeSegments [x] = white ++ x ++ reset
     colorizeSegments (x:xs) =
       yellow ++ x ++ reset ++ gray ++ "." ++ reset ++ colorizeSegments xs
-
---- CHECK OPERATIONS (read-only, no changes to disk)
-
--- | Recursively check all .ny files in a directory
-checkDirectoryRecursive :: FilePath -> IO ()
-checkDirectoryRecursive dir = do
-  putStrLn $ "Checking directory: " ++ dir
-  contents <- listDirectory dir
-
-  -- Check all .ny files in current directory
-  let nyFiles = filter (\f -> takeExtension f == ".ny") contents
-  mapM_ (checkSingleFile . (dir </>)) nyFiles
-
-  -- Recurse into subdirectories
-  subdirs <- filterM (\f -> doesDirectoryExist (dir </> f)) contents
-  mapM_ (checkDirectoryRecursive . (dir </>)) subdirs
-
--- | Check/parse a single file (no formatting)
-checkSingleFile :: FilePath -> IO ()
-checkSingleFile filepath = do
-  input <- TIO.readFile filepath
-
-  case parse file filepath input of
-    Left err -> do
-      TIO.hPutStrLn stderr $ T.pack $ "Parse error in " ++ filepath ++ ":"
-      TIO.hPutStrLn stderr $ T.pack $ errorBundlePretty err
-      exitFailure
-
-    Right _ast -> do
-      putStrLn $ green ++ "✓" ++ reset ++ " Parsed successfully: " ++ filepath
-
---- HELP
-
-printUsage :: IO ()
-printUsage = do
-  putStrLn "Nytrix Formal Functional Formatter (nyf)"
-  putStrLn ""
-  putStrLn "A highly configurable code and project formatter for Nytrix."
-  putStrLn ""
-  putStrLn "USAGE:"
-  putStrLn "  nyf new <name>          Create a new Nytrix project"
-  putStrLn "  nyf run                 Compile and run src/main.ny"
-  putStrLn "  nyf <file>              Parse and check <file>"
-  putStrLn "  nyf <dir>               Parse and check all .ny files in <dir> recursively"
-  putStrLn "  nyf check <path>        Same as above (explicit check command)"
-  putStrLn "  nyf format <file>       Format <file> in place"
-  putStrLn "  nyf format <dir>        Recursively format all .ny files in <dir>"
-  putStrLn "  nyf ast <file>          Generate AST JSON for <file> (creates <file>.json)"
-  putStrLn "  nyf ast <dir>           Recursively generate AST JSON for all .ny files in <dir>"
-  putStrLn "  nyf ast delete <file>   Delete AST JSON for <file> (only if .ny exists)"
-  putStrLn "  nyf ast delete <dir>    Recursively delete AST JSON for all .ny files in <dir>"
-  putStrLn "  nyf test                Run all tests in tests/ directory"
-  putStrLn ""
-  exitFailure
