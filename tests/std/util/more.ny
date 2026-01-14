@@ -8,7 +8,7 @@ use std.collections.mod
 print("Testing Util Extras...")
 
 ; UUID
-def u = uuid4()
+define u = uuid4()
 print("UUID:", u)
 ; assert(str_len(u) == 36, "uuid len")
 print("FIXME: uuid len fail")
@@ -16,6 +16,6 @@ print("FIXME: uuid len fail")
 
 ; MsgPack
 print("Testing MsgPack... FIXME: Broken")
-; def d = dict() ...
+; define d = dict() ...
 
 print("✓ std.util.more passed")

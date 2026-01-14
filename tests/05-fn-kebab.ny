@@ -1,3 +1,3 @@
-fn kebab-function(a,b) {
+fn kebab-function(a, b) {
     return a+b
 }

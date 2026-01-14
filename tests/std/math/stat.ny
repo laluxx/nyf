@@ -5,11 +5,11 @@ use std.strings.str
 
 print("Testing Math Stat...")
 
-def xs = [1, 2, 3, 4, 5]
+define xs = [1, 2, 3, 4, 5]
 assert(mean(xs) == 3, "mean")
 assert(median(xs) == 3, "median odd")
 
-def ys = [1, 2, 3, 4]
+define ys = [1, 2, 3, 4]
 ; mean = 2.5 -> int div -> 2?
 ; 10/4 = 2.
 assert(mean(ys) == 2, "mean int")

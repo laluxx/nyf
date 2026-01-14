@@ -21,7 +21,11 @@ nyf help
 #+end_src
 
 
-* TODO Potential new syntax [0/3]
+* TODO Formal grammar language generator [0/2]
+- [ ] EBNF file Generation
+- [ ] PEG file Generation
+
+* TODO Potential new syntax [2/3]
 
 ** TODO wrap [FlAG] to generates a .ny file from an .h file
    we SHOULD cache wrappers ahead of time, this allow something like this to work:
@@ -34,7 +38,8 @@ nyf help
 
    #+end_src
 
-** TODO Hashmap
+** DONE Hashmap
+   CLOSED: [2026-01-13 Tue 23:20]
 
 @Laluxx
 We should support both syntaxes, The first is cleaner IMO.
@@ -54,7 +59,8 @@ But the second should also be supported and the default.
                       "define": 4 }
    #+end_src
 
-** TODO Switch Case
+** DONE Switch Case
+   CLOSED: [2026-01-13 Tue 23:20]
 
  This new syntax [[file:~/xos/projects/c/nytrix/src/std/core/reflect.ny::fn len(x) {][Could be used here instead]] it reoves the noise and leave
  a clear mapping between memory and consequence.

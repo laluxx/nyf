@@ -5,7 +5,7 @@ use std.strings.str
 
 print("Testing Math Number Theory...")
 
-def res = egcd(10, 6) ; g=2, x=-1, y=2? 10(-1) + 6(2) = -10 + 12 = 2.
+define res = egcd(10, 6) ; g=2, x=-1, y=2? 10(-1) + 6(2) = -10 + 12 = 2.
 assert(get(res, 0) == 2, "egcd gcd")
 assert(get(res, 1) * 10 + get(res, 2) * 6 == 2, "egcd valid")
 

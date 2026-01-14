@@ -1,7 +1,2 @@
-"""This is a
-multiline
-string"""
-
-'''Another
-multiline
-string'''
+"This is a\\nmultiline\\nstring"
+"Another\\nmultiline\\nstring"

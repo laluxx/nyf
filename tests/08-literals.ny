@@ -1,6 +1,6 @@
 42
 3.14
 "hello"
-'world'
+"world"
 true
 false

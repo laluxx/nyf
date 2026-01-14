@@ -1,6 +1,6 @@
 ; Control flow tests
 
-def x = 1
+define x = 1
 if x == 1 {
     assert(true, "if works")
 } else {

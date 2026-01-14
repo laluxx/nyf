@@ -1,9 +1,6 @@
-; Test std.core.core - Core memory and I/O operations
 use std.core.core
-
-; Memory operations
-fn test_main(){
-    ; Memory operations
+; Test std.core.core - Core memory and I/O operations
+fn test_main() {
     def ptr = malloc(64)
     assert(ptr != 0, "malloc returns non-null")
     store64(ptr, 12345)
@@ -13,8 +10,6 @@ fn test_main(){
     val = load8(ptr)
     assert(val == 255, "store8/load8")
     free(ptr)
-
-    ; List operations
     def lst = list(8)
     assert(is_list(lst), "list creation")
     assert(list_len(lst) == 0, "empty list length")
@@ -36,8 +31,6 @@ fn test_main(){
     assert(list_len(lst) == 4, "extend length")
     lst = list_clear(lst)
     assert(list_len(lst) == 0, "clear list")
-
-    ; Type checking
     assert(is_int(42), "is_int on integer")
     assert(!is_int("string"), "is_int on string")
     assert(is_ptr("string"), "is_ptr on string")
@@ -47,8 +40,6 @@ fn test_main(){
     def d = dict(8)
     assert(is_dict(d), "is_dict on dict")
     assert(!is_dict([]), "is_dict on list")
-
-    ; File operations
     def test_file = "/tmp/nytrix_core_test.txt"
     def test_data = "Hello, Nytrix!"
     def result = file_write(test_file, test_data)
@@ -62,8 +53,6 @@ fn test_main(){
     assert(str_contains(content, "More data"), "file append works")
     file_remove(test_file)
     assert(!file_exists(test_file), "file removed")
-
-    ; String helpers
     def s1 = "hello"
     def s2 = "hello"
     def s3 = "world"

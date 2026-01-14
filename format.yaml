@@ -1,0 +1,278 @@
+
+### Nyf - CONFIGURATION
+
+### INDENTATION
+
+indentSize: 4                     # Spaces per indentation level
+useTabs: false                    # Use tabs instead of spaces
+
+### LINE LENGTH
+
+maxLineLength: 80                 # Maximum line length before wrapping
+wrapLongExpressions: false        # Automatically wrap expressions exceeding maxLineLength
+wrapAfterOperator: true           # When wrapping: true = wrap after +, false = wrap before +
+binaryOpWrapIndent: 4             # Extra indentation for wrapped binary operations
+chainedCallWrapStyle: sameline    # 'sameline' or 'newline' for .foo().bar() chaining
+
+### BLANK LINES
+
+newlinesBetweenTopLevel: 1        # Blank lines between top-level declarations
+newlinesBetweenFunctions: 2       # Blank lines between function definitions
+newlinesInsideFunction: 0         # Blank lines between statements in function bodies
+newlinesBeforeComment: 0          # Blank lines before standalone comments
+newlinesAfterComment: 0           # Blank lines after standalone comments
+
+### Blank line management
+preserveBlankLines: false         # Keep original blank lines (up to max)
+maxConsecutiveBlankLines: 1       # Collapse N+ blank lines to this many (1 = no double blanks)
+removeBlankLineAtStart: true      # Remove blank lines at file start
+removeBlankLineAtEnd: true        # Remove blank lines at file end
+
+### SPACING: PARAMETERS & ARGUMENTS
+
+spaceAfterComma: 1                # Spaces after commas: (a, b) vs (a,b)
+spaceBeforeComma: 0               # Spaces before commas: (a ,b) vs (a,b)
+spaceInsideParens: 0              # Spaces inside parentheses: ( x ) vs (x)
+spaceInsideBrackets: 0            # Spaces inside brackets: [ x ] vs [x]
+spaceInsideBraces: 0              # Spaces inside braces: { x } vs {x}
+
+### SPACING: OPERATORS
+
+spaceAroundAssign: 1              # Spaces around = in assignments: a = b vs a=b
+spaceAroundBinOp: 1               # Spaces around binary operators: a + b vs a+b
+spaceAroundCompare: 1             # Spaces around comparisons: a == b vs a==b
+spaceAfterUnaryOp: 0              # Spaces after unary operators: ! a vs !a
+spaceAroundColon: 1               # Spaces around colons: a: Int vs a:Int
+spaceAroundArrow: 1               # Spaces around arrows: -> in functions/matches
+
+### ALIGNMENT
+
+#### Assignment alignment (consecutive = signs)
+
+alignAssignments: false           # Vertically align = in consecutive assignments
+alignAssignmentThreshold: 2       # Minimum consecutive lines needed to trigger alignment
+
+#### Comparison alignment (consecutive == != < > etc.)
+alignComparisons: false           # Vertically align comparison operators
+alignComparisonThreshold: 3       # Minimum consecutive lines needed
+alignComparisonOps:               # Which operators to align
+  - "=="
+  - "!="
+  - "<"
+  - ">"
+  - "<="
+  - ">="
+
+#### Function argument alignment
+alignFunctionArgs: false          # Vertically align function arguments
+oneArgPerLineThreshold: 5         # If more than N args, force one per line
+alignAssertMessages: false        # Special: align second arg in assert() calls
+
+### FUNCTION DEFINITIONS
+
+spaceBeforeFnParen: 0             # Space between function name and (: fn foo () vs fn foo()
+spaceBeforeFnBrace: 1             # Space before opening brace: fn() { vs fn(){
+fnBraceOnNewLine: false           # Place { on new line: fn()\n{ vs fn() {
+spaceAfterFnKeyword: 1            # Space after 'fn': fn foo vs fn  foo
+fnDocstringStyle: indented        # 'indented' or 'flush' - docstring indentation
+
+### CONTROL STRUCTURES (if, while, for, match)
+
+### Spacing before condition/expression
+
+spaceBeforeIfParen: 1             # if () vs if()
+spaceBeforeWhileParen: 1          # while () vs while()
+spaceBeforeForParen: 1            # for () vs for()
+spaceBeforeMatchParen: 1          # match () vs match()
+
+### Brace placement
+ifBraceOnNewLine: false           # if ()\n{ vs if () {
+whileBraceOnNewLine: false        # while ()\n{ vs while () {
+forBraceOnNewLine: false          # for ()\n{ vs for () {
+matchBraceOnNewLine: false        # match ()\n{ vs match () {
+
+### Spacing after keyword
+
+spaceAfterIfKeyword: 1            # if vs if
+spaceAfterWhileKeyword: 1         # while vs while
+spaceAfterForKeyword: 1           # for vs for
+spaceAfterMatchKeyword: 1         # match vs match
+
+### MATCH STATEMENTS
+
+spaceBeforeMatchArrow: 1          # Space before ->: pattern -> vs pattern->
+spaceAfterMatchArrow: 1           # Space after ->: -> expr vs ->expr
+matchArmIndent: 0                 # Extra indentation for match arms (in spaces)
+matchPatternOnNewLine: false      # Force each pattern on its own line
+
+### COMMENTS
+
+### Basic comment formatting
+spaceAfterCommentDelimiter: 1     # Spaces after ;: ; comment vs ;comment
+commentDelimiterStyle: single     # 'single', 'double', or 'none' (number of spaces)
+preserveCommentIndent: false      # Keep original comment indentation
+preserveCommentFormatting: false  # Don't reformat text inside comments
+
+### Inline comment alignment
+
+alignInlineComments: false        # Align ; comments to fixed column
+inlineCommentColumn: 40           # Column to align to (if enabled)
+
+### Block comments
+
+blockCommentStyle: horizontal     # 'horizontal' (*) or 'vertical' alignment
+
+### ORG-MODE FEATURES
+
+orgModeEnabled: true              # Enable all org-mode features below
+
+### Heading style
+
+headingStyle: semicolons          # 'semicolons' (;;; Title) or 'hash' (###  Title)
+
+### Checkbox formatting
+
+checkboxStyle: upper              # 'upper' ([X]) or 'lower' ([x]) for checked boxes
+
+### Automatic updates
+
+autoUpdateCookies: true           # Auto-update progress cookies [1/3]
+autoAddClosedTimestamp: true      # Add CLOSED: timestamp when marking DONE
+closedTimestampFormat: "[%Y-%m-%d %a %H:%M]"  # Timestamp format string
+
+### LISTS & COLLECTIONS
+
+### General collection formatting
+
+trailingCommaInLists: false       # Allow trailing comma: [1, 2,] vs [1, 2]
+oneElementPerLine: false          # Force one element per line always
+maxElementsPerLine: 5             # Before wrapping to multiple lines
+listWrapThreshold: 60             # Wrap if total width exceeds this
+
+### Dictionary formatting
+
+dictColonStyle: after             # 'none' (a:1), 'after' (a: 1), 'both' (a : 1)
+
+### USE STATEMENTS
+
+### Spacing in use statements
+
+spaceAroundAs: 1                  # Spaces around 'as': use foo as bar vs use foo as bar
+dotSeparatorSpacing: 0            # Spaces around dots: use foo.bar vs use foo . bar
+
+### Use statement organization
+
+sortUseStatements: false          # Sort use statements alphabetically
+groupUseByPrefix: false           # Group by first component (std.*, user.*)
+blankLinesBetweenUseGroups: 1     # Blank lines between groups (if grouping enabled)
+
+
+### DEFINE/ASSIGNMENTS
+
+defineStyle: space                # 'space' (define x y =) or 'comma' (define x, y =)
+
+### LAMBDA & FUNCTION EXPRESSIONS
+
+lambdaStyle: keyword              # 'keyword' (lambda) or 'symbol' (λ)
+spaceAfterLambdaKeyword: 0        # Space after 'lambda'/'λ'
+lambdaBraceOnNewLine: false       # Place lambda body brace on new line
+
+### LAYOUT DECLARATIONS
+
+layoutFieldsOnNewLine: true       # Each field on its own line
+layoutFieldAlignment: false       # Align field types vertically
+layoutTrailingComma: false        # Trailing comma after last field
+
+### BLOCKS & STATEMENTS
+
+### Compact blocks
+compactSmallBlocks: false         # Format small blocks on one line: { return x }
+maxCompactBlockLength: 1          # Max statements in a compact block
+blockStatementSpacing: 0          # Extra blank lines between statements in blocks
+
+### Empty blocks
+emptyBlockStyle: compact          # 'compact' ({}), 'spaced' ({ }), or 'newline' ({\n})
+
+### STRING LITERALS
+
+stringQuoteStyle: double          # 'double' (") or 'single' (')
+fstringSpacing: 0                 # Spaces in f-string braces: f"{x}" vs f"{ x }"
+preferTripleQuotes: false         # Use """ for multi-line strings
+
+### NUMERIC LITERALS
+
+integerGrouping: false            # Use underscores: 1_000_000 vs 1000000
+integerGroupSize: 3               # Group every N digits (usually 3)
+hexUpperCase: true                # 0xFF vs 0xff
+floatScientificThreshold: 1000000 # Use scientific notation for numbers > this
+
+### RETURN STATEMENTS
+
+spaceAfterReturn: 1               # Space after 'return': return x vs return  x
+returnOnSeparateLine: false       # Force return on its own line always
+
+### TRY-CATCH
+
+spaceAfterCatch: 0                # Space after 'catch': catch e vs catch  e
+catchVarStyle: spaced             # 'spaced' (catch e), 'parens' (catch(e)), 'spaced_parens' (catch (e))
+
+### DEFER
+
+deferBraceOnNewLine: false        # Place defer { on new line
+spaceAfterDefer: 1                # Space after 'defer' keyword
+
+### GOTO & LABELS
+
+labelColonSpacing: 0              # Space before colon: label: vs label :
+spaceAfterGoto: 1                 # Space after 'goto' keyword
+
+### TYPE ANNOTATIONS
+
+spaceBeforeTypeColon: 0           # Space before :: x : Int vs x: Int
+spaceAfterTypeColon: 1            # Space after :: x: Int vs x:Int
+
+### INDEXING & SLICING
+
+spaceAroundSliceColon: 0          # Spaces in slices: a[1 : 2] vs a[1:2]
+spaceInsideIndexBrackets: 0       # Spaces in indexing: a[ 0 ] vs a[0]
+
+### ASM & EMBED
+
+asmArgumentSpacing: 1             # Spacing in asm() arguments
+embedArgumentStyle: quoted        # 'quoted' (embed("path")) or 'unquoted' (embed(path))
+
+### COMPTIME
+
+comptimeBraceOnNewLine: false     # Place comptime { on new line
+spaceAfterComptime: 1             # Space after 'comptime' keyword
+
+### GENERAL CLEANUP
+
+trimTrailingWhitespace: true      # Remove trailing spaces from lines
+ensureNewlineAtEOF: true          # Ensure file ends with newline
+normalizeWhitespace: true         # Normalize multiple spaces to single space
+collapseAdjacentSpaces: true      # Multiple spaces → single space (where allowed)
+
+###  STANDARD PRESETS 
+
+# You can pick one with ~nyf standard COMPACT~
+
+####  COMPACT
+## indentSize: 2
+## spaceAroundBinOp: 0
+## spaceAroundAssign: 0
+## maxLineLength: 120
+## newlinesBetweenFunctions: 1
+
+####  VERBOSE
+## indentSize: 4
+## spaceAroundBinOp: 1
+## spaceAroundAssign: 1
+## fnBraceOnNewLine: true
+## ifBraceOnNewLine: true
+
+####  ALIGNED STYLE
+## alignAssignments: true
+## alignComparisons: true
+## alignFunctionArgs: true
+## layoutFieldAlignment: true

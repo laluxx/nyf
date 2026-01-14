@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Test where
 
-import System.Directory (listDirectory, doesDirectoryExist)
+import System.Directory (listDirectory, doesDirectoryExist, doesFileExist)
 import System.FilePath ((</>), takeExtension, splitExtension)
-import Control.Monad (when)
+import Control.Monad (when, filterM)
 import qualified Data.Text.IO as TIO
 import System.Exit (exitFailure, exitSuccess)
 import Text.Megaparsec (parse, errorBundlePretty)
@@ -74,8 +74,20 @@ printTestHeader count = do
 
 printTestLine :: FilePath -> Bool -> Integer -> IO ()
 printTestLine fp passed timeNs = do
-  let name = takeWhile (/= '.') $ reverse $ takeWhile (/= '/') $ reverse fp
-      nameLen = length name
+  let -- Remove "tests/" prefix and get relative path
+      testPrefix = "tests/" :: String
+      relativePath = drop (length testPrefix) fp
+      -- Check if file is in a subdirectory
+      hasSubdir = '/' `elem` relativePath
+      -- Extract directory path and filename
+      (dirPath, fileName) = if hasSubdir
+                            then let parts = reverse $ takeWhile (/= '/') $ reverse relativePath
+                                     dir = take (length relativePath - length parts - 1) relativePath
+                                 in (dir ++ "/", takeWhile (/= '.') parts)
+                            else ("", takeWhile (/= '.') relativePath)
+      -- Construct display name
+      displayName = dirPath ++ fileName
+      nameLen = length displayName
       totalWidth = 55
       dotsNeeded = max 0 (totalWidth - nameLen)
       dots = replicate (dotsNeeded - 1) '.'
@@ -85,12 +97,22 @@ printTestLine fp passed timeNs = do
                else colorBold ++ colorRed ++ "✗ FAIL" ++ colorReset
 
   putStr $ colorBold ++ colorYellow ++ "-▶" ++ colorReset ++ "  "
-  putStr $ colorBold ++ name ++ colorReset ++ " "
+  -- Print directory path with yellow dirs and gray dots, filename in bold
+  when hasSubdir $ do
+      let pathParts = splitOn '/' dirPath
+          coloredPath = concat [colorYellow ++ part ++ colorReset ++ colorGray ++ "." ++ colorReset | part <- init pathParts, not (null part)]
+      putStr coloredPath
+  putStr $ colorBold ++ fileName ++ colorReset ++ " "
   putStr $ colorGray ++ dots ++ colorReset ++ " "
   putStrLn $ status ++ " " ++ colorGray ++ "[" ++ colorReset ++ timeStr
+  where
+    splitOn :: Char -> String -> [String]
+    splitOn c s = case break (== c) s of
+      (a, []) -> [a]
+      (a, _:b) -> a : splitOn c b
 
 printError :: FilePath -> String -> IO ()
-printError fp err = do
+printError _fp err = do
   putStrLn ""
   putStrLn err
   putStrLn ""
@@ -131,21 +153,40 @@ printSummary stats = do
 
   putStrLn ""
 
+-- Recursively find all .ny files in a directory
+findTestFiles :: FilePath -> IO [FilePath]
+findTestFiles dir = do
+  exists <- doesDirectoryExist dir
+  if not exists
+    then return []
+    else do
+      entries <- listDirectory dir
+      let fullPaths = map (dir </>) entries
+
+      -- Find all .ny files in current directory
+      files <- filterM doesFileExist fullPaths
+      let nyFiles = filter (\f -> takeExtension f == ".ny") files
+
+      -- Recursively search subdirectories
+      dirs <- filterM doesDirectoryExist fullPaths
+      nestedFiles <- concat <$> mapM findTestFiles dirs
+
+      return $ nyFiles ++ nestedFiles
+
 runAllTests :: IO ()
 runAllTests = do
-  testDir <- pure "tests"
+  let testDir = "tests"
   exists <- doesDirectoryExist testDir
   when (not exists) $ do
     putStrLn "Error: tests/ directory not found"
     exitFailure
 
-  entries <- listDirectory testDir
-  let testFiles =
-        [ testDir </> f
-        | f <- entries
-        , takeExtension f == ".ny"
-        ]
-      sortedFiles = sortTestFiles testFiles
+  testFiles <- findTestFiles testDir
+  let sortedFiles = sortTestFiles testFiles
+
+  when (null sortedFiles) $ do
+    putStrLn "Warning: No .ny test files found in tests/ directory"
+    exitSuccess
 
   printTestHeader (length sortedFiles)
 

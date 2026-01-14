@@ -5,7 +5,7 @@ use std.strings.str
 use std.collections.mod
 
 print("Testing URL...")
-def u = url_parse("http://user:pass@example.com:8080/path?query=1#frag")
+define u = url_parse("http://user:pass@example.com:8080/path?query=1#frag")
 assert(eq(get(u, 0), "http"), "scheme")
 assert(eq(get(u, 1), "user:pass"), "auth")
 

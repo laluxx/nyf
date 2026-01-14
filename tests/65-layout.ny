@@ -1,9 +1,8 @@
 layout Point {
-    int: x
+    int: x,
     int: y
 }
-
 layout Person {
-    name: str
-    age:  int
+    name: str,
+    age: int
 }

@@ -1,3 +1,6 @@
 define name = "World"
+define name = "W"
 f"Hello {name}"
-f'Value: {42 + 1}'
+"A"
+"ldsk"
+f"Value: {42 + 1}"

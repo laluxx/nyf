@@ -4,16 +4,38 @@ module AST where
 import Data.Text (Text)
 import GHC.Generics (Generic)
 
+--- Comments
+
+data Comment
+  = LineComment CommentType Text Int  -- Added indentation level
+  | BlockComment Text Int  -- Added indentation level
+  deriving (Show, Eq, Generic)
+
+data CommentType
+  = InlineComment        -- ; single semicolon
+  | RegularComment       -- ;; double semicolon
+  | HeadingComment Int TodoState Text  -- ;;; H1, ;;;; H2, etc.
+  | CheckboxComment Bool Text  -- ;; - [ ] or ;; - [X]
+  | ClosedComment Text   -- ;;CLOSED: [date]
+  deriving (Show, Eq, Generic)
+
+data TodoState
+  = NoTodo
+  | Todo
+  | Done
+  deriving (Show, Eq, Generic)
+
 --- Top-level declarations
 
 data Decl
   = UseDecl Text (Maybe Text)
   | DefineDecl [Text] Expr
-  | AssignDecl Expr Expr                    -- Add this line
-  | CompoundAssignDecl Expr CompoundOp Expr -- Add this line
+  | AssignDecl Expr Expr
+  | CompoundAssignDecl Expr CompoundOp Expr
   | FnDecl Text [Param] (Maybe Text) (Maybe DocString) [Stmt]
   | LayoutDecl Text [LayoutField]
   | ExprDecl Expr
+  | CommentDecl Comment  -- Comments at top level
   deriving (Show, Eq, Generic)
 
 type DocString = Text
@@ -34,21 +56,22 @@ data Param = Param
 
 data Stmt
   = ExprStmt Expr
-  | VarDecl [Text] Expr                 -- def x = expr or x, y = expr
-  | Assign Expr Expr                    -- x = expr (lhs can be index/member)
-  | CompoundAssign Expr CompoundOp Expr -- x += expr
-  | IfStmt Expr [Stmt] (Maybe [Stmt])   -- if (cond) {..} else {..}
+  | VarDecl [Text] Expr
+  | Assign Expr Expr
+  | CompoundAssign Expr CompoundOp Expr
+  | IfStmt Expr [Stmt] (Maybe [Stmt])
   | WhileStmt Expr [Stmt]
-  | ForStmt Text Expr [Stmt]            -- for x in iterable {..}
-  | TryStmt [Stmt] (Maybe Text) [Stmt]  -- try {..} catch (e) {..}
+  | ForStmt Text Expr [Stmt]
+  | TryStmt [Stmt] (Maybe Text) [Stmt]
   | ReturnStmt (Maybe Expr)
   | BreakStmt
   | ContinueStmt
   | GotoStmt Text
   | LabelStmt Text
   | DeferStmt [Stmt]
-  | MatchStmt Expr [MatchArm] (Maybe [Stmt])  -- match expr { arms } + default
+  | MatchStmt Expr [MatchArm] (Maybe [Stmt])
   | BlockStmt [Stmt]
+  | CommentStmt Comment  -- Comments in statement position
   deriving (Show, Eq, Generic)
 
 data CompoundOp
@@ -74,18 +97,18 @@ data Expr
   | SetLit [Expr]
   | DictLit [(Expr, Expr)]
   | Call Expr [CallArg]
-  | MemberCall Expr Text [CallArg]           -- obj.method(args)
-  | InferredMember Text                      -- .field (for enum-like access)
-  | Index Expr (Maybe Expr) (Maybe Expr) (Maybe Expr)  -- target[start:stop:step]
+  | MemberCall Expr Text [CallArg]
+  | InferredMember Text
+  | Index Expr (Maybe Expr) (Maybe Expr) (Maybe Expr)
   | BinOp BinOp Expr Expr
   | UnOp UnOp Expr
   | LogicalOp LogicalOp Expr Expr
-  | Lambda [Param] (Maybe Text) [Stmt] Bool  -- params, return type, body, is_variadic
-  | FnExpr [Param] (Maybe Text) [Stmt] Bool  -- inline fn expression
-  | FString [FStringPart]                    -- f"hello {x}"
-  | AsmExpr Text Text [Expr]                 -- asm("code", "constraints", args)
-  | EmbedExpr Text                           -- embed("file.txt")
-  | ComptimeExpr [Stmt]                      -- comptime { ... }
+  | Lambda [Param] (Maybe Text) [Stmt] Bool
+  | FnExpr [Param] (Maybe Text) [Stmt] Bool
+  | FString [FStringPart]
+  | AsmExpr Text Text [Expr]
+  | EmbedExpr Text
+  | ComptimeExpr [Stmt]
   deriving (Show, Eq, Generic)
 
 data FStringPart

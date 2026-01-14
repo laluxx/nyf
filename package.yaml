@@ -5,16 +5,19 @@ license:             MIT
 author:              "Laluxx"
 maintainer:          "lorenzoaddamo10@gmail.com"
 copyright:           "2026 Laluxx"
-
 extra-source-files:
 - README.org
 - LICENSE
-
 description:         Formatter for the Nytrix programming language
+
+data-files:
+- tests/**/*.ny
 
 dependencies:
 - base >= 4.7 && < 5
 - text
+- yaml
+- time
 - filepath
 - directory
 - megaparsec
@@ -22,6 +25,7 @@ dependencies:
 - parser-combinators
 - aeson
 - bytestring
+- process
 
 ghc-options:
 - -Wall
@@ -40,4 +44,3 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-    - -O2

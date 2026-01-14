@@ -4,11 +4,11 @@ use std.core.test
 print("Testing Threads...")
 
 ; Alloc shared counter
-def counter_ptr = rt_malloc(8)
+define counter_ptr = rt_malloc(8)
 store64(counter_ptr, 0)
-def mtx = mutex_new()
+define mtx = mutex_new()
 
-def ptr_val = load64(counter_ptr)
+define ptr_val = load64(counter_ptr)
 assert(ptr_val == 0, "init counter")
 
 ; Define thread function
@@ -26,11 +26,11 @@ fn worker(args){
     ; If we pass a List, it's a pointer.
     ; But accessing it inside thread involves GC/Allocator safety?
     ; Assuming read-only access to 'args' structure is safe.
-    
+
     use std.collections.mod
     def m = get(args, 0)
     def c = get(args, 1)
-    
+
     mutex_lock(m)
     def v = load64(c)
     store64(c, v + 1)
@@ -38,19 +38,19 @@ fn worker(args){
     return 0
 }
 
-def args = list()
+define args = list()
 args = append(args, mtx)
 args = append(args, counter_ptr)
 
-def t1 = thread_spawn(worker, args)
-def t2 = thread_spawn(worker, args)
-def t3 = thread_spawn(worker, args)
+define t1 = thread_spawn(worker, args)
+define t2 = thread_spawn(worker, args)
+define t3 = thread_spawn(worker, args)
 
 thread_join(t1)
 thread_join(t2)
 thread_join(t3)
 
-def final = load64(counter_ptr)
+define final = load64(counter_ptr)
 print("Final counter:", final)
 assert(final == 3, "thread mutex counter")
 

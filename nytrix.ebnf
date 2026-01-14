@@ -1,0 +1,200 @@
+(* Comments *)
+line_comment ::= ';' {any_char - newline} newline
+block_comment ::= ';*' {any_char} '*;'
+
+(* Identifiers *)
+identifier ::= (letter | '_') {letter | digit | '_' | '-' | '?' | '!' | '$' | '>' | '/' | '+' | '*' | '^' | '~' | '@' | '#' | '%' | "'"}
+
+(* Keywords *)
+keyword ::= 'fn' | 'define' | 'use' | 'if' | 'else' | 'elif' | 'while'
+          | 'return' | 'for' | 'in' | 'try' | 'catch' | 'defer' | 'goto'
+          | 'lambda' | 'break' | 'continue' | 'match' | 'layout' | 'comptime'
+          | 'true' | 'false' | 'as' | 'asm' | 'embed' | 'def'
+
+(* Literals *)
+integer ::= decimal | hexadecimal
+decimal ::= digit {digit}
+hexadecimal ::= '0x' hex_digit {hex_digit}
+
+float ::= digit {digit} '.' digit {digit} [exponent]
+exponent ::= ('e' | 'E') ['+' | '-'] digit {digit}
+
+string ::= '"' {string_char | escape_seq} '"'
+         | "'" {string_char | escape_seq} "'"
+         | '"""' {any_char} '"""'
+         | "'''" {any_char} "'''"
+
+fstring ::= 'f' ('"' {fstring_part} '"' | "'" {fstring_part} "'")
+fstring_part ::= string_char | '{' expr '}'
+
+escape_seq ::= '\' ('n' | 't' | 'r' | '\' | '"' | "'")
+
+boolean ::= 'true' | 'false'
+
+program ::= {declaration}
+
+declaration ::= use_decl
+              | define_decl
+              | fn_decl
+              | layout_decl
+              | assign_decl
+              | expr_decl
+
+use_decl ::= 'use' module_path ['as' identifier] stmt_sep
+
+module_path ::= identifier {'.' identifier}
+
+define_decl ::= 'define' identifier_list '=' expr stmt_sep
+
+identifier_list ::= identifier {',' identifier}
+
+fn_decl ::= 'fn' identifier '(' [param_list] ')' [':' type_name] block
+
+param_list ::= param {',' param} [',' '...']
+
+param ::= ['...'] identifier [':' type_name] ['=' expr]
+
+layout_decl ::= 'layout' identifier '{' layout_field {',' layout_field} [','] '}'
+
+layout_field ::= identifier ':' type_name
+
+assign_decl ::= expr ('=' | compound_op) expr stmt_sep
+
+compound_op ::= '+=' | '-=' | '*=' | '/=' | '%='
+              | '&=' | '|=' | '^=' | '<<=' | '>>='
+
+expr_decl ::= expr stmt_sep
+
+statement ::= expr_stmt
+            | var_decl
+            | assign_stmt
+            | if_stmt
+            | while_stmt
+            | for_stmt
+            | try_stmt
+            | return_stmt
+            | break_stmt
+            | continue_stmt
+            | goto_stmt
+            | label_stmt
+            | defer_stmt
+            | match_stmt
+            | block_stmt
+
+expr_stmt ::= expr stmt_sep
+
+var_decl ::= 'def' identifier_list '=' expr stmt_sep
+
+assign_stmt ::= expr ('=' | compound_op) expr stmt_sep
+
+if_stmt ::= 'if' expr block {'elif' expr block} ['else' block]
+
+while_stmt ::= 'while' expr block
+
+for_stmt ::= 'for' identifier 'in' expr block
+
+try_stmt ::= 'try' block 'catch' [identifier] block
+
+return_stmt ::= 'return' [expr] stmt_sep
+
+break_stmt ::= 'break' stmt_sep
+
+continue_stmt ::= 'continue' stmt_sep
+
+goto_stmt ::= 'goto' identifier stmt_sep
+
+label_stmt ::= identifier ':' stmt_sep
+
+defer_stmt ::= 'defer' block
+
+match_stmt ::= 'match' expr '{' {match_arm} [default_arm] '}'
+
+match_arm ::= expr '->' (statement | block)
+
+default_arm ::= ('else' | 'otherwise') '->' (statement | block)
+
+block_stmt ::= block
+
+block ::= '{' {statement} '}'
+
+stmt_sep ::= ';' | newline | (before '}')
+
+expr ::= logical_or
+
+logical_or ::= logical_and {'||' logical_and}
+
+logical_and ::= equality {'&&' equality}
+
+equality ::= relational {('==' | '!=') relational}
+
+relational ::= bitwise {('<' | '<=' | '>' | '>=') bitwise}
+
+bitwise ::= additive {('<<' | '>>' | '&' | '|' | '^') additive}
+
+additive ::= multiplicative {('+' | '-') multiplicative}
+
+multiplicative ::= unary {('*' | '/' | '%') unary}
+
+unary ::= ('-' | '!' | '~') unary
+        | postfix
+
+postfix ::= primary {postfix_op}
+
+postfix_op ::= call_op
+             | member_op
+             | index_op
+
+call_op ::= '(' [call_args] ')'
+
+member_op ::= '.' identifier ['(' [call_args] ')']
+
+index_op ::= '[' slice_expr ']'
+
+slice_expr ::= [expr] [':' [expr] [':' [expr]]]
+
+call_args ::= call_arg {',' call_arg}
+
+call_arg ::= [identifier '='] expr
+
+primary ::= identifier
+          | integer
+          | float
+          | string
+          | fstring
+          | boolean
+          | list_lit
+          | tuple_lit
+          | set_lit
+          | dict_lit
+          | lambda_expr
+          | fn_expr
+          | asm_expr
+          | embed_expr
+          | comptime_expr
+          | inferred_member
+          | '(' expr ')'
+
+list_lit ::= '[' [expr {',' expr} [',']] ']'
+
+tuple_lit ::= '(' [expr {',' expr} [',']] ')'
+
+set_lit ::= '{' [expr {',' expr} [',']] '}'
+
+dict_lit ::= '{' [':'] '}'
+           | '{' dict_pair {',' dict_pair} [','] '}'
+
+dict_pair ::= expr ':' expr
+
+lambda_expr ::= 'lambda' '(' [param_list] ')' [':' type_name] block
+
+fn_expr ::= 'fn' '(' [param_list] ')' [':' type_name] block
+
+asm_expr ::= 'asm' '(' string [',' string {',' expr}] ')'
+
+embed_expr ::= 'embed' '(' string ')'
+
+comptime_expr ::= 'comptime' block
+
+inferred_member ::= '.' identifier
+
+type_name ::= identifier

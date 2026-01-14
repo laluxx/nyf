@@ -1,5 +1,5 @@
-define bit_and = 0xFF & 0x0F
-define bit_or = 0xF0 | 0x0F
-define bit_xor = 0xFF ^ 0xAA
-define lshift = 1 << 4
-define rshift = 16 >> 2
+define bit_and  = 255 & 15
+define bit_or   = 240 | 15
+define bit_xor  = 255 ^ 170
+define lshift   = 1 << 4
+define rshift   = 16 >> 2

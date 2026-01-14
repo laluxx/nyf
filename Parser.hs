@@ -11,33 +11,89 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import AST
-  ( Decl(..), Stmt(..), Expr(..), Param(..), LayoutField(..)
-  , CallArg(..), MatchArm(..), FStringPart(..)
-  , BinOp(..), LogicalOp(..), UnOp(..), CompoundOp(..)
-  , DocString
-  )
 
 type Parser = Parsec Void Text
 
---- Whitespace and comments
+--- Comment parsing
+
+parseCommentWithIndent :: Parser Comment
+parseCommentWithIndent = do
+  -- Count leading spaces/tabs at the beginning of line
+  leadingWS <- many (char ' ' <|> char '\t')
+  let indentLevel = length leadingWS
+  choice
+    [ try (blockComment indentLevel)
+    , try (lineComment indentLevel)
+    ]
+
+blockComment :: Int -> Parser Comment
+blockComment indentLevel = do
+  _ <- string ";*"
+  content <- T.pack <$> manyTill anySingle (try $ string "*;")
+  return $ BlockComment content indentLevel
+
+lineComment :: Int -> Parser Comment
+lineComment indentLevel = do
+  semicolons <- takeWhile1P Nothing (== ';')
+  let level = T.length semicolons
+  _ <- optional (char ' ')  -- Optional space after semicolons
+  content <- T.pack <$> manyTill anySingle (void (char '\n') <|> eof)
+  let trimmedContent = T.stripStart content
+
+  case level of
+    1 -> return $ LineComment InlineComment trimmedContent indentLevel
+    2 -> parseLevel2Comment trimmedContent indentLevel
+    _ -> parseHeadingComment (level - 2) trimmedContent indentLevel
+
+parseLevel2Comment :: Text -> Int -> Parser Comment
+parseLevel2Comment content indentLevel
+  | "- [" `T.isPrefixOf` content =
+      let checked = "- [X]" `T.isPrefixOf` content || "- [x]" `T.isPrefixOf` content
+          text = T.strip $ T.drop 5 content
+      in return $ LineComment (CheckboxComment checked text) content indentLevel
+  | "CLOSED:" `T.isPrefixOf` content =
+      return $ LineComment (ClosedComment (T.strip $ T.drop 7 content)) content indentLevel
+  | otherwise = return $ LineComment RegularComment content indentLevel
+
+parseHeadingComment :: Int -> Text -> Int -> Parser Comment
+parseHeadingComment level content indentLevel =
+  let (todoState, rest) = extractTodoState content
+  in return $ LineComment (HeadingComment level todoState rest) content indentLevel
+
+extractTodoState :: Text -> (TodoState, Text)
+extractTodoState text
+  | "TODO " `T.isPrefixOf` text = (Todo, T.strip $ T.drop 5 text)
+  | "DONE " `T.isPrefixOf` text = (Done, T.strip $ T.drop 5 text)
+  | otherwise = (NoTodo, text)
+
+--- Whitespace and comments (original behavior for skipping)
 
 sc :: Parser ()
-sc = L.space space1 lineComment blockComment
+sc = L.space space1 (void $ try lineCommentSkip) (void $ try blockCommentSkip)
   where
-    lineComment  = L.skipLineComment ";"
-    blockComment = L.skipBlockComment ";*" "*;"
+    lineCommentSkip = do
+      _ <- char ';'
+      _ <- manyTill anySingle (void (char '\n') <|> eof)
+      return ()
+    blockCommentSkip = do
+      _ <- string ";*"
+      _ <- manyTill anySingle (try $ string "*;")
+      return ()
 
--- Space consumer that does NOT consume newlines
 scn :: Parser ()
-scn = L.space (void $ some (char ' ' <|> char '\t')) lineComment blockComment
+scn = L.space (void $ some (char ' ' <|> char '\t')) (void $ try lineCommentSkip) (void $ try blockCommentSkip)
   where
-    lineComment  = L.skipLineComment ";"
-    blockComment = L.skipBlockComment ";*" "*;"
+    lineCommentSkip = do
+      _ <- char ';'
+      _ <- manyTill anySingle (void (char '\n') <|> eof)
+      return ()
+    blockCommentSkip = do
+      _ <- string ";*"
+      _ <- manyTill anySingle (try $ string "*;")
+      return ()
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
-
--- Lexeme that preserves newlines for statement separation
 
 symbol :: Text -> Parser ()
 symbol = void . L.symbol sc
@@ -46,7 +102,6 @@ parens, brackets :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 brackets = between (symbol "[") (symbol "]")
 
--- Custom braces that handles statement blocks properly
 braces :: Parser a -> Parser a
 braces p = do
   symbol "{"
@@ -54,11 +109,9 @@ braces p = do
   symbol "}"
   return result
 
--- Statement terminator: semicolon or newline
 stmtSep :: Parser ()
 stmtSep = void (symbol ";") <|> void (some (char '\n' <* scn)) <|> lookAhead (void (char '}'))
 
--- Optional statement terminator
 optStmtSep :: Parser ()
 optStmtSep = void (optional stmtSep)
 
@@ -95,9 +148,6 @@ identifier = try $ lexeme (p >>= check)
         then fail "not an identifier"
         else return chars
 
-    -- Allow '-' and '>' separately so they can form '->'
-    -- But NOT '<' which should only be an operator
-    -- Add ' for prime notation (e.g., x', List')
     isIdentChar c = isAlpha c || isDigit c || c `elem` ("_-?!$>/+*^~@#%'" :: String)
     isOperatorChar c = c `elem` ("-+*/>!^~%" :: String)
 
@@ -108,7 +158,6 @@ identifier = try $ lexeme (p >>= check)
 identifierList :: Parser [Text]
 identifierList = do
   first <- identifier
-  -- Look ahead to see if there's a comma or another identifier
   choice
     [ do
         symbol ","
@@ -129,10 +178,7 @@ integer = lexeme $ try hexadecimal <|> L.decimal
       L.hexadecimal
 
 float :: Parser Double
-float = lexeme L.float  -- Only parse actual floats, not integers
-
--- float :: Parser Double
--- float = lexeme $ try L.float <|> (fromIntegral <$> (L.decimal :: Parser Integer))
+float = lexeme L.float
 
 stringLiteral :: Parser Text
 stringLiteral = lexeme $ T.pack <$> stringBody
@@ -215,28 +261,37 @@ compoundAssignOp = choice
   ]
 
 file :: Parser [Decl]
-file = sc *> many (topLevel <* sc) <* eof
+file = many topLevel <* eof
   where
     topLevel = choice
-      [ try useAsDecl
-      , try defineDecl
-      , try layoutDecl
-      , try fnDecl
-      , defError
-      , try stmtAsDecl  -- Add this line
-      , exprOrAssignDecl
+      [ try commentDecl
+      , skipEmptyLines *> choice
+          [ try useAsDecl
+          , try defineDecl
+          , try layoutDecl
+          , try fnDecl
+          , defError
+          , try stmtAsDecl
+          , exprOrAssignDecl
+          ]
       ]
+
+    commentDecl = do
+      comment <- parseCommentWithIndent
+      _ <- optional (char '\n')
+      return $ CommentDecl comment
+
+    skipEmptyLines = void $ many (char '\n')
 
     defError = do
       try (symbol "def")
       fail "Cannot use 'def' in global scope. Use 'define' for global variables instead."
 
-    -- Convert statements to declarations at top level
     stmtAsDecl = do
       s <- stmt
       case s of
         ExprStmt e -> return $ ExprDecl e
-        _ -> return $ ExprDecl (Var "stmt")  -- Placeholder for other statement types
+        _ -> return $ ExprDecl (Var "stmt")
 
 useAsDecl :: Parser Decl
 useAsDecl = do
@@ -249,12 +304,13 @@ useAsDecl = do
 
 defineDecl :: Parser Decl
 defineDecl = do
-     symbol "define"
-     names <- identifierList
-     symbol "="
-     e <- expr
-     optStmtSep
-     return $ DefineDecl names e
+  scn  -- Allow leading whitespace before 'define'
+  symbol "define"
+  names <- identifierList
+  symbol "="
+  e <- expr
+  optStmtSep
+  return $ DefineDecl names e
 
 layoutDecl :: Parser Decl
 layoutDecl = do
@@ -284,7 +340,6 @@ fnDecl = do
       if isVariadic
         then do
           pname <- identifier
-          -- Variadic params can't have type annotations or defaults
           return $ Param ("..." <> pname) Nothing Nothing
         else do
           pname <- identifier
@@ -297,25 +352,33 @@ extractDocString (ExprStmt (StrLit s) : rest) = (Just s, rest)
 extractDocString xs = (Nothing, xs)
 
 stmt :: Parser Stmt
-stmt = sc *> choice  -- Add this 'sc *>' to consume leading whitespace
-  [ try ifStmt
-  , try whileStmt
-  , try forStmt
-  , try tryStmt
-  , try matchStmt
-  , try returnStmt
-  , try breakStmt
-  , try continueStmt
-  , try gotoStmt
-  , try deferStmt
-  , try labelStmt
-  , try defStmt
-  , try fnStmtDecl
-  , try layoutStmtDecl
-  , try useStmtDecl
-  , try assignOrExprStmt
-  , blockStmt
+stmt = choice
+  [ try commentStmt
+  , sc *> choice
+      [ try ifStmt
+      , try whileStmt
+      , try forStmt
+      , try tryStmt
+      , try matchStmt
+      , try returnStmt
+      , try breakStmt
+      , try continueStmt
+      , try gotoStmt
+      , try deferStmt
+      , try labelStmt
+      , try defStmt
+      , try fnStmtDecl
+      , try layoutStmtDecl
+      , try useStmtDecl
+      , try assignOrExprStmt
+      , blockStmt
+      ]
   ]
+  where
+    commentStmt = do
+      comment <- parseCommentWithIndent
+      _ <- optional (char '\n')
+      return $ CommentStmt comment
 
 useStmtDecl :: Parser Stmt
 useStmtDecl = do
@@ -334,12 +397,12 @@ fnStmtDecl = do
 
 defStmt :: Parser Stmt
 defStmt = do
-     symbol "def"
-     names <- identifierList
-     symbol "="
-     e <- expr
-     optStmtSep
-     return $ VarDecl names e
+  symbol "def"
+  names <- identifierList
+  symbol "="
+  e <- expr
+  optStmtSep
+  return $ VarDecl names e
 
 assignOrExprStmt :: Parser Stmt
 assignOrExprStmt = try assignStmt <|> exprStmt
@@ -348,7 +411,7 @@ assignOrExprStmt = try assignStmt <|> exprStmt
       lhs <- term >>= postfix
       choice
         [ do
-            op <- compoundAssignOp
+            op <- compoundOp  -- Renamed from compoundAssignOp
             rhs <- expr
             optStmtSep
             return $ CompoundAssign lhs op rhs
@@ -358,13 +421,11 @@ assignOrExprStmt = try assignStmt <|> exprStmt
             optStmtSep
             return $ Assign lhs rhs
         ]
-
     exprStmt = do
       e <- expr
       optStmtSep
       return $ ExprStmt e
-
-    compoundAssignOp = choice
+    compoundOp = choice  -- Renamed from compoundAssignOp
       [ try (symbol "+=" $> AddAssign)
       , try (symbol "-=" $> SubAssign)
       , try (symbol "*=" $> MulAssign)
@@ -406,13 +467,11 @@ forStmt :: Parser Stmt
 forStmt = do
   symbol "for"
   (var, iterable) <-
-    -- Try: for (var in iterable)
     try (parens $ do
       v <- identifier
       symbol "in"
       i <- expr
       return (v, i))
-    -- Or: for var in iterable
     <|> do
       v <- identifier
       symbol "in"
@@ -485,8 +544,8 @@ matchStmt = do
     consequence = choice
       [ braces (many stmt)
       , do
-          s <- stmt          -- Changed from 'expr' to 'stmt'
-          return [s]         -- Wrap in list
+          s <- stmt
+          return [s]
       ]
 
     defaultArm = do
@@ -647,42 +706,36 @@ tupleOrExpr = do
     Nothing -> return $ TupleLit []
     Just e -> choice
       [ try $ do
-          -- Comma-separated: (1, 2, 3) or (1,)
           symbol ","
           rest <- expr `sepEndBy` symbol ","
           return $ TupleLit (e : rest)
       , do
-          -- Space-separated or single expr: (1 2 3) or (1)
           rest <- many (try $ sc *> notFollowedBy (char ')') *> expr)
           if null rest
-            then return e  -- Single expr, not a tuple
+            then return e
             else return $ TupleLit (e : rest)
       ]
 
 dictOrSet :: Parser Expr
 dictOrSet = braces $ choice
   [ try $ do
-      -- Empty dict: {:}
       symbol ":"
       return $ DictLit []
   , do
       first <- optional expr
       case first of
-        Nothing -> return $ SetLit []  -- Empty set: {}
+        Nothing -> return $ SetLit []
         Just e -> choice
           [ try $ do
-              -- Dictionary: {k: v, ...}
               symbol ":"
               v <- expr
               rest <- many (try $ symbol "," >> dictPair)
               return $ DictLit ((e, v) : rest)
           , try $ do
-              -- Comma-separated set: {1, 2, 3}
               symbol ","
               rest <- expr `sepEndBy` symbol ","
               return $ SetLit (e : rest)
           , do
-              -- Space-separated set: {1 2 3}
               rest <- many (try expr)
               if null rest
                 then return $ SetLit [e]
