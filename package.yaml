@@ -26,6 +26,7 @@ dependencies:
 - aeson
 - bytestring
 - process
+- bytestring
 
 ghc-options:
 - -Wall

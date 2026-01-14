@@ -22,6 +22,8 @@ import Paths_nyf (getDataDir)
 import Control.Exception (catch, SomeException)
 import Data.List ( isInfixOf, dropWhileEnd, isSuffixOf, intercalate )
 import Data.Char (isSpace)
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Lazy as BL
 
 import Parser (file)
 import Formatter (format)
@@ -70,6 +72,9 @@ main = do
 
     ["check", path] ->
       checkPath path
+
+    ["ast", path] ->      -- ADD THIS CASE
+      astPath path
 
     [path] ->
       checkPath path
@@ -292,7 +297,7 @@ packageYamlTemplate :: String -> String -> String -> String -> T.Text
 packageYamlTemplate projectName gitUser userName userEmail = T.unlines
   [ "name:                " <> T.pack projectName
   , "version:             0.1.0.0"
-  , "github:              \"" <> T.pack gitUser <> "/" <> T.pack projectName <> "\""
+  , "github:              \"" <> T.pack userName <> "/" <> T.pack projectName <> "\""
   , "license:             MIT"
   , "author:              \"" <> T.pack userName <> "\""
   , "maintainer:          \"" <> T.pack userEmail <> "\""
@@ -646,8 +651,7 @@ readmeTemplate projectName = T.unlines
 
 gitignoreTemplate :: T.Text
 gitignoreTemplate = T.unlines
-  [ "# Nytrix build artifacts"
-  , "build/"
+  [ "build/"
   , "*.o"
   , "*.hi"
   , "*.exe"
@@ -682,6 +686,61 @@ checkPath path = do
       else do
         putStrLn $ "Error: Not a file or directory: " ++ path
         exitFailure
+
+-- | Generate AST JSON for a file or directory
+astPath :: FilePath -> IO ()
+astPath path = do
+  isDir <- doesDirectoryExist path
+  isFile <- doesFileExist path
+
+  if isDir
+    then astDirectoryRecursive path
+    else if isFile
+      then astSingleFile path
+      else do
+        putStrLn $ "Error: Not a file or directory: " ++ path
+        exitFailure
+
+-- | Recursively generate AST JSON for all .ny files in a directory
+astDirectoryRecursive :: FilePath -> IO ()
+astDirectoryRecursive dir = do
+  putStrLn $ "Generating AST JSON for directory: " ++ dir
+  contents <- listDirectory dir
+
+  -- Generate AST for all .ny files in current directory
+  let nyFiles = filter (\f -> takeExtension f == ".ny") contents
+  mapM_ (astSingleFile . (dir </>)) nyFiles
+
+  -- Recurse into subdirectories
+  subdirs <- filterM (\f -> doesDirectoryExist (dir </> f)) contents
+  mapM_ (astDirectoryRecursive . (dir </>)) subdirs
+
+-- | Generate AST JSON for a single file
+astSingleFile :: FilePath -> IO ()
+astSingleFile filepath = do
+  putStrLn $ "Generating AST: " ++ formatFilePath filepath
+
+  -- Read input
+  input <- TIO.readFile filepath
+
+  -- Parse
+  case parse file filepath input of
+    Left err -> do
+      TIO.hPutStrLn stderr $ T.pack $ "Parse error in " ++ filepath ++ ":"
+      TIO.hPutStrLn stderr $ T.pack $ errorBundlePretty err
+      exitFailure
+
+    Right ast -> do
+      -- Generate JSON output path: replace .ny with .json
+      let jsonPath = take (length filepath - 3) filepath ++ ".json"
+
+      -- Encode AST to JSON
+      let jsonData = Aeson.encode ast
+
+      -- Write JSON file
+      BL.writeFile jsonPath jsonData
+      putStrLn $ green ++ "✓" ++ reset ++ " Generated AST JSON: " ++ jsonPath
+
 
 --- FORMAT OPERATIONS (write to disk)
 
@@ -789,7 +848,7 @@ checkSingleFile filepath = do
       exitFailure
 
     Right _ast -> do
-      putStrLn $ "✓ Parsed successfully: " ++ filepath
+      putStrLn $ green ++ "✓" ++ reset ++ " Parsed successfully: " ++ filepath
 
 --- HELP
 
@@ -807,6 +866,8 @@ printUsage = do
   putStrLn "  nyf check <path>     Same as above (explicit check command)"
   putStrLn "  nyf format <file>    Format <file> in place"
   putStrLn "  nyf format <dir>     Recursively format all .ny files in <dir>"
+  putStrLn "  nyf ast <file>       Generate AST JSON for <file> (creates <file>.json)"
+  putStrLn "  nyf ast <dir>        Recursively generate AST JSON for all .ny files in <dir>"
   putStrLn "  nyf test             Run all tests in tests/ directory"
   putStrLn ""
   putStrLn "EXAMPLES:"
@@ -814,5 +875,7 @@ printUsage = do
   putStrLn "  cd my-project              # Enter project directory"
   putStrLn "  nyf run                    # Compile and run"
   putStrLn "  nyf format src/            # Format all files in src/"
+  putStrLn "  nyf ast src/main.ny        # Generate src/main.json with AST"
+  putStrLn "  nyf ast src/               # Generate JSON for all .ny files in src/"
   putStrLn ""
   exitFailure

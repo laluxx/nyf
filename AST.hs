@@ -3,27 +3,34 @@ module AST where
 
 import Data.Text (Text)
 import GHC.Generics (Generic)
+import Data.Aeson (ToJSON)  -- ADD THIS IMPORT
 
 --- Comments
 
 data Comment
-  = LineComment CommentType Text Int  -- Added indentation level
-  | BlockComment Text Int  -- Added indentation level
+  = LineComment CommentType Text Int
+  | BlockComment Text Int
   deriving (Show, Eq, Generic)
 
+instance ToJSON Comment  -- ADD THIS
+
 data CommentType
-  = InlineComment        -- ; single semicolon
-  | RegularComment       -- ;; double semicolon
-  | HeadingComment Int TodoState Text  -- ;;; H1, ;;;; H2, etc.
-  | CheckboxComment Bool Text  -- ;; - [ ] or ;; - [X]
-  | ClosedComment Text   -- ;;CLOSED: [date]
+  = InlineComment
+  | RegularComment
+  | HeadingComment Int TodoState Text
+  | CheckboxComment Bool Text
+  | ClosedComment Text
   deriving (Show, Eq, Generic)
+
+instance ToJSON CommentType  -- ADD THIS
 
 data TodoState
   = NoTodo
   | Todo
   | Done
   deriving (Show, Eq, Generic)
+
+instance ToJSON TodoState  -- ADD THIS
 
 --- Top-level declarations
 
@@ -35,8 +42,10 @@ data Decl
   | FnDecl Text [Param] (Maybe Text) (Maybe DocString) [Stmt]
   | LayoutDecl Text [LayoutField]
   | ExprDecl Expr
-  | CommentDecl Comment  -- Comments at top level
+  | CommentDecl Comment
   deriving (Show, Eq, Generic)
+
+instance ToJSON Decl  -- ADD THIS
 
 type DocString = Text
 
@@ -46,11 +55,15 @@ data LayoutField = LayoutField
   , fieldOffset :: Int
   } deriving (Show, Eq, Generic)
 
+instance ToJSON LayoutField  -- ADD THIS
+
 data Param = Param
   { paramName :: Text
   , paramType :: Maybe Text
   , paramDefault :: Maybe Expr
   } deriving (Show, Eq, Generic)
+
+instance ToJSON Param  -- ADD THIS
 
 --- Statements
 
@@ -71,18 +84,24 @@ data Stmt
   | DeferStmt [Stmt]
   | MatchStmt Expr [MatchArm] (Maybe [Stmt])
   | BlockStmt [Stmt]
-  | CommentStmt Comment  -- Comments in statement position
+  | CommentStmt Comment
   deriving (Show, Eq, Generic)
+
+instance ToJSON Stmt  -- ADD THIS
 
 data CompoundOp
   = AddAssign | SubAssign | MulAssign | DivAssign | ModAssign
   | AndAssign | OrAssign | XorAssign | LShiftAssign | RShiftAssign
   deriving (Show, Eq, Generic)
 
+instance ToJSON CompoundOp  -- ADD THIS
+
 data MatchArm = MatchArm
   { matchPattern :: Expr
   , matchConseq :: [Stmt]
   } deriving (Show, Eq, Generic)
+
+instance ToJSON MatchArm  -- ADD THIS
 
 --- Expressions
 
@@ -111,15 +130,21 @@ data Expr
   | ComptimeExpr [Stmt]
   deriving (Show, Eq, Generic)
 
+instance ToJSON Expr  -- ADD THIS
+
 data FStringPart
   = FStrText Text
   | FStrExpr Expr
   deriving (Show, Eq, Generic)
 
+instance ToJSON FStringPart  -- ADD THIS
+
 data CallArg = CallArg
   { argName :: Maybe Text
   , argValue :: Expr
   } deriving (Show, Eq, Generic)
+
+instance ToJSON CallArg  -- ADD THIS
 
 data BinOp
   = Add | Sub | Mul | Div | Mod
@@ -127,8 +152,14 @@ data BinOp
   | BitAnd | BitOr | BitXor | LShift | RShift
   deriving (Show, Eq, Generic)
 
+instance ToJSON BinOp  -- ADD THIS
+
 data LogicalOp = And | Or
   deriving (Show, Eq, Generic)
 
+instance ToJSON LogicalOp  -- ADD THIS
+
 data UnOp = Neg | Not | BitNot
   deriving (Show, Eq, Generic)
+
+instance ToJSON UnOp  -- ADD THIS

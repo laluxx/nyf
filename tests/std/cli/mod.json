@@ -1,0 +1,1 @@
+[{"contents":["std.cli.mod",null],"tag":"UseDecl"},{"contents":{"contents":[{"contents":"print","tag":"Var"},[{"argName":null,"argValue":{"contents":[{"contents":"has_flag","tag":"Var"},[{"argName":null,"argValue":{"contents":"--test","tag":"StrLit"}}]],"tag":"Call"}}]],"tag":"Call"},"tag":"ExprDecl"}]
