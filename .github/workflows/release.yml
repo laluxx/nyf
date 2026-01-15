@@ -6,44 +6,46 @@ on:
       - 'v*'
 
 jobs:
-  release:
+  build-and-release:
     runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Stack
-      uses: haskell-actions/setup@v2
-      with:
-        enable-stack: true
-        stack-version: '2.9.3.1'
-    
-    - name: Build with Stack
+    - name: Install Stack
       run: |
+        # Install Stack to system path
+        sudo curl -sSL https://get.haskellstack.org/ | sudo sh
+        stack --version
+        
+    - name: Build project
+      run: |
+        # Fix permissions first
+        sudo chown -R runner:runner .
+        
+        # Build
         stack update
-        stack build --test --no-run-tests
-        mkdir -p dist-release
+        stack build --allow-different-user
         
-        # Get the binary path (multiple ways to be safe)
-        BINARY_PATH=$(stack path --local-install-root)/bin/nyf
-        
-        if [ -f "$BINARY_PATH" ]; then
-          cp "$BINARY_PATH" dist-release/nyf-linux-x86_64
-          echo "✅ Binary copied: $BINARY_PATH"
-        else
-          # Try alternative method
-          stack install --local-bin-path dist-release/
-          mv dist-release/nyf dist-release/nyf-linux-x86_64 || true
-        fi
-    
-    - name: Test binary
+    - name: Prepare release assets
       run: |
-        chmod +x dist-release/nyf-linux-x86_64
-        ./dist-release/nyf-linux-x86_64 version
-        ./dist-release/nyf-linux-x86_64 --help
-    
-    - name: Create Release
+        # Create release directory
+        mkdir -p release-assets
+        
+        # Install binary
+        stack install --allow-different-user --local-bin-path release-assets
+        
+        # Rename and prepare
+        cd release-assets
+        mv nyf nyf-linux-x86_64
+        chmod +x nyf-linux-x86_64
+        
+        # Create checksum
+        sha256sum nyf-linux-x86_64 > checksum.txt
+        
+    - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist-release/nyf-linux-x86_64
+          release-assets/nyf-linux-x86_64
+          release-assets/checksum.txt
