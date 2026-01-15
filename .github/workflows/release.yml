@@ -4,6 +4,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -21,10 +24,8 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-stack-
     
-    - name: Setup Stack
-      run: |
-        stack --version || curl -sSL https://get.haskellstack.org/ | sh
-        stack --version
+    - name: Verify Stack
+      run: stack --version
         
     - name: Build project
       run: |
@@ -35,7 +36,7 @@ jobs:
       run: |
         mkdir -p release-assets
         
-        # Find the binary (in case name differs)
+        # Find the binary
         BINARY=$(find ./bin -type f -executable | head -n 1)
         BINARY_NAME=$(basename "$BINARY")
         
@@ -52,5 +53,3 @@ jobs:
       with:
         files: release-assets/*
         generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
