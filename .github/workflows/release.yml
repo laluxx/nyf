@@ -1,5 +1,4 @@
 name: Release
-
 on:
   push:
     tags:
@@ -12,40 +11,46 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install Stack
+    - name: Cache Stack dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.stack
+          .stack-work
+        key: ${{ runner.os }}-stack-${{ hashFiles('stack.yaml', 'package.yaml', '*.cabal') }}
+        restore-keys: |
+          ${{ runner.os }}-stack-
+    
+    - name: Setup Stack
       run: |
-        # Install Stack to system path
-        sudo curl -sSL https://get.haskellstack.org/ | sudo sh
+        stack --version || curl -sSL https://get.haskellstack.org/ | sh
         stack --version
         
     - name: Build project
       run: |
-        # Fix permissions first
-        sudo chown -R runner:runner .
-        
-        # Build
         stack update
-        stack build --allow-different-user
+        stack build --copy-bins --local-bin-path ./bin
         
     - name: Prepare release assets
       run: |
-        # Create release directory
         mkdir -p release-assets
         
-        # Install binary
-        stack install --allow-different-user --local-bin-path release-assets
+        # Find the binary (in case name differs)
+        BINARY=$(find ./bin -type f -executable | head -n 1)
+        BINARY_NAME=$(basename "$BINARY")
         
-        # Rename and prepare
-        cd release-assets
-        mv nyf nyf-linux-x86_64
-        chmod +x nyf-linux-x86_64
+        # Copy and rename
+        cp "$BINARY" "release-assets/${BINARY_NAME}-linux-x86_64"
+        chmod +x "release-assets/${BINARY_NAME}-linux-x86_64"
         
         # Create checksum
-        sha256sum nyf-linux-x86_64 > checksum.txt
+        cd release-assets
+        sha256sum * > checksums.txt
         
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          release-assets/nyf-linux-x86_64
-          release-assets/checksum.txt
+        files: release-assets/*
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
