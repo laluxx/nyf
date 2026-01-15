@@ -26,17 +26,13 @@ nyf help
       the diff will be very powerfule because it will also work on
       2 files =nyf file1 file2= like this it will tell if they truly
       change also on a semantic level with trough analysis
-- [ ] msg -- Will permit some sort of comunicatio between operators
-      of the current project in path, view it as a language builting
-      issue tracker system with comments doing theyr things... dw about it
-      both the flag name and the system still have to be designed.
 
 * TODO Formal grammar language generator [0/2]
 - [ ] EBNF file Generation
 - [ ] PEG  file Generation
 
 * TODO Potential new syntax [2/3]
-
+x
 ** TODO wrap [FlAG] to generates a .ny file from an .h file
    we SHOULD cache wrappers ahead of time, this allow something like this to work:
    #+begin_src nytrix

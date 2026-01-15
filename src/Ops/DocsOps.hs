@@ -10,7 +10,6 @@ import Control.Monad (filterM, forM_, unless)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Text.Megaparsec (parse, errorBundlePretty)
-
 import Parser (file)
 import Docs
 import qualified Colors as C
@@ -35,22 +34,18 @@ generateDocsForFile filepath = do
   putStrLn $ C.info $ "Generating documentation for: " ++ filepath
 
   input <- TIO.readFile filepath
-
   case parse file filepath input of
     Left err -> do
       putStrLn $ C.error' $ "Parse error in " ++ filepath
       putStrLn $ errorBundlePretty err
       exitFailure
-
     Right ast -> do
       let docs = extractDocs ast
-
       if null docs
         then putStrLn $ C.warning "No documentation found in file"
         else do
-          let htmlContent = generateDocs docs
+          htmlContent <- generateDocs docs  -- Changed: use <- instead of let
           let outputPath = takeBaseName filepath ++ ".html"
-
           TIO.writeFile outputPath htmlContent
           putStrLn $ C.success $ "Documentation generated: " ++ outputPath
           putStrLn $ C.dim ++ "  Found " ++ show (length docs) ++ " documented item(s)" ++ C.reset
@@ -82,7 +77,7 @@ generateDocsForDirectory dir = do
         else do
           -- Generate index page
           let indexPath = docsDir </> "index.html"
-          let htmlContent = generateDocs allDocs
+          htmlContent <- generateDocs allDocs  -- Changed: use <- instead of let
           TIO.writeFile indexPath htmlContent
 
           putStrLn ""
@@ -108,12 +103,10 @@ findNyFiles dir = do
 processFileForDocs :: FilePath -> IO [(T.Text, DocBlock)]
 processFileForDocs filepath = do
   input <- TIO.readFile filepath
-
   case parse file filepath input of
     Left err -> do
       putStrLn $ C.warning $ "Skipping " ++ filepath ++ " (parse error)"
       return []
-
     Right ast -> do
       let docs = extractDocs ast
       unless (null docs) $

@@ -69,27 +69,21 @@ extractTodoState text
 --- Whitespace and comments (original behavior for skipping)
 
 sc :: Parser ()
-sc = L.space space1 (void $ try lineCommentSkip) (void $ try blockCommentSkip)
+sc = L.space space1 (void $ try lineCommentSkip) empty
   where
     lineCommentSkip = do
       _ <- char ';'
+      _ <- notFollowedBy (char '*')  -- Don't consume block comments!
       _ <- manyTill anySingle (void (char '\n') <|> eof)
-      return ()
-    blockCommentSkip = do
-      _ <- string ";*"
-      _ <- manyTill anySingle (try $ string "*;")
       return ()
 
 scn :: Parser ()
-scn = L.space (void $ some (char ' ' <|> char '\t')) (void $ try lineCommentSkip) (void $ try blockCommentSkip)
+scn = L.space (void $ some (char ' ' <|> char '\t')) (void $ try lineCommentSkip) empty
   where
     lineCommentSkip = do
       _ <- char ';'
+      _ <- notFollowedBy (char '*')  -- Don't consume block comments!
       _ <- manyTill anySingle (void (char '\n') <|> eof)
-      return ()
-    blockCommentSkip = do
-      _ <- string ";*"
-      _ <- manyTill anySingle (try $ string "*;")
       return ()
 
 lexeme :: Parser a -> Parser a
@@ -264,7 +258,10 @@ file :: Parser [Decl]
 file = many topLevel <* eof
   where
     topLevel = choice
-      [ try commentDecl
+      [ try $ do
+          comment <- parseCommentWithIndent
+          _ <- many (char '\n')
+          return $ CommentDecl comment
       , skipEmptyLines *> choice
           [ try useAsDecl
           , try defineDecl
@@ -275,11 +272,6 @@ file = many topLevel <* eof
           , exprOrAssignDecl
           ]
       ]
-
-    commentDecl = do
-      comment <- parseCommentWithIndent
-      _ <- optional (char '\n')
-      return $ CommentDecl comment
 
     skipEmptyLines = void $ many (char '\n')
 
@@ -299,17 +291,16 @@ useAsDecl = do
   parts <- identifier `sepBy1` symbol "."
   let path = T.intercalate "." parts
   alias <- optional $ symbol "as" >> identifier
-  optStmtSep
+  -- Remove optStmtSep!
   return $ UseDecl path alias
 
 defineDecl :: Parser Decl
 defineDecl = do
-  scn  -- Allow leading whitespace before 'define'
   symbol "define"
   names <- identifierList
   symbol "="
   e <- expr
-  optStmtSep
+  -- Remove optStmtSep!
   return $ DefineDecl names e
 
 layoutDecl :: Parser Decl
@@ -351,7 +342,12 @@ extractDocString :: [Stmt] -> (Maybe DocString, [Stmt])
 extractDocString (ExprStmt (StrLit s) : rest) = (Just s, rest)
 extractDocString xs = (Nothing, xs)
 
-stmt :: Parser Stmt
+commentStmt :: Parser Stmt
+commentStmt = do
+  comment <- parseCommentWithIndent
+  _ <- optional (char '\n')
+  return $ CommentStmt comment
+
 stmt = choice
   [ try commentStmt
   , sc *> choice
@@ -374,11 +370,6 @@ stmt = choice
       , blockStmt
       ]
   ]
-  where
-    commentStmt = do
-      comment <- parseCommentWithIndent
-      _ <- optional (char '\n')
-      return $ CommentStmt comment
 
 useStmtDecl :: Parser Stmt
 useStmtDecl = do
@@ -625,6 +616,14 @@ unary = choice
   , term >>= postfix
   ]
 
+
+-- Parse operators as identifiers in certain contexts
+operatorIdent :: Parser Text
+operatorIdent = lexeme $ do
+  takeWhile1P Nothing isOperatorChar
+  where
+    isOperatorChar c = c `elem` ("-+*/>!^~%&|^" :: String)
+
 term :: Parser Expr
 term = choice
   [ try (FString <$> fstringLiteral)
@@ -642,8 +641,17 @@ term = choice
   , try (parens tupleOrExpr)
   , try dictOrSet
   , try listLit
-  , Var <$> identifier
+  , try (Var <$> identifier)
+  , Var <$> operatorIdent  -- Allow operators as variables
   ]
+
+polishCall :: Parser Expr
+polishCall = parens $ do
+  fn <- expr  -- Parse the function (could be an operator or identifier)
+  args <- many expr  -- Parse space-separated arguments
+  if null args
+    then return fn  -- Just (expr) with no args
+    else return $ Call fn (map (CallArg Nothing) args)
 
 inferredMember :: Parser Expr
 inferredMember = do
@@ -699,6 +707,7 @@ paramList = do
       pdef <- optional (symbol "=" >> expr)
       return $ Param pname ptype pdef
 
+-- And update tupleOrExpr to handle Polish notation
 tupleOrExpr :: Parser Expr
 tupleOrExpr = do
   first <- optional expr
@@ -710,10 +719,11 @@ tupleOrExpr = do
           rest <- expr `sepEndBy` symbol ","
           return $ TupleLit (e : rest)
       , do
+          -- Check if there are more space-separated expressions
           rest <- many (try $ sc *> notFollowedBy (char ')') *> expr)
           if null rest
-            then return e
-            else return $ TupleLit (e : rest)
+            then return e  -- Just a single parenthesized expression
+            else return $ Call e (map (CallArg Nothing) rest)  -- Polish notation call
       ]
 
 dictOrSet :: Parser Expr
@@ -766,15 +776,16 @@ listLit = brackets $ do
 
 postfix :: Expr -> Parser Expr
 postfix e = choice
-  [ do
-      args <- parens (callArg `sepBy` symbol ",")
+  [ try $ do
+      -- Try to parse as function call (either style)
+      args <- parens parseArgs
       postfix (Call e args)
   , do
       symbol "."
       member <- identifier
       choice
         [ do
-            args <- parens (callArg `sepBy` symbol ",")
+            args <- parens parseArgs
             postfix (MemberCall e member args)
         , postfix (MemberCall e member [])
         ]
@@ -784,6 +795,12 @@ postfix e = choice
   , return e
   ]
   where
+    -- Try comma-separated first, then space-separated
+    parseArgs = try commaArgs <|> spaceArgs
+
+    commaArgs = callArg `sepBy` symbol ","
+    spaceArgs = many (sc *> expr) >>= \exprs -> return (map (CallArg Nothing) exprs)
+
     callArg = try namedArg <|> positionalArg
     namedArg = do
       name <- identifier

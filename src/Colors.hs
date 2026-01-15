@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Colors
-  ( white, green, yellow, red, blue, cyan, gray
+  ( white, magenta, brightMagenta, green, yellow, red, blue, cyan, gray
   , reset, bold, dim
   , colorize
   , success, error', warning, info
@@ -9,6 +9,12 @@ module Colors
 -- | ANSI color codes
 white :: String
 white = "\ESC[97m"
+
+magenta :: String
+magenta = "\ESC[35m"
+
+brightMagenta :: String
+brightMagenta = "\ESC[95m"
 
 green :: String
 green = "\ESC[32m"

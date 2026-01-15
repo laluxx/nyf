@@ -1,3 +1,4 @@
 nyf.cabal
 .stack-work
 stack.yaml.lock
+src/Main

@@ -108,6 +108,7 @@ matchPatternOnNewLine: false      # Force each pattern on its own line
 ### COMMENTS
 
 ### Basic comment formatting
+
 spaceAfterCommentDelimiter: 1     # Spaces after ;: ; comment vs ;comment
 commentDelimiterStyle: single     # 'single', 'double', or 'none' (number of spaces)
 preserveCommentIndent: false      # Keep original comment indentation

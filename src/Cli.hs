@@ -31,6 +31,7 @@ data Command
   | Ast AstOptions FilePath
   | Deps FilePath
   | Docs FilePath
+  | DocsWatch FilePath
   | Config
   | Completion String
   deriving (Show, Eq)
@@ -248,11 +249,18 @@ commands =
       { cmdName = "docs"
       , cmdCategory = "TESTING & DOCS"
       , cmdShortDesc = "Generate documentation"
-      , cmdLongDesc = "Generates documentation from docstrings and special annotations in the code (e.g., @fun, @param)."
-      , cmdUsage = ["n do <path>", "n docs <path>"]
+      , cmdLongDesc = "Generates documentation from docstrings and special annotations in the code (e.g., @fun, @param). Use 'docs watch' to start a live-reloading documentation server."
+      , cmdUsage =
+          [ "n do <path>"
+          , "n docs <path>"
+          , "n docs watch"
+          , "n docs watch <path>"
+          ]
       , cmdExamples =
           [ ("n do src/", "Generate docs for src/")
           , ("n do .", "Generate docs for project")
+          , ("n docs watch", "Watch current directory with live reload")
+          , ("n docs watch src/", "Watch src/ with live reload")
           ]
       , cmdOptions = []
       }
@@ -385,6 +393,8 @@ parseCommandExpanded args = case args of
   ["ast", "pretty", path] -> Just (Ast (defaultAstOpts { astPretty = True }) path)
   ["ast", "delete", path] -> Just (Ast (defaultAstOpts { astDelete = True }) path)
   ["deps", file] -> Just (Deps file)
+  ["docs", "watch"] -> Just (DocsWatch ".")
+  ["docs", "watch", path] -> Just (DocsWatch path)
   ["docs", path] -> Just (Docs path)
   ["config"] -> Just Config
   ["completion"] -> Nothing  -- Must specify shell

@@ -1,0 +1,1 @@
+define kebab-name = 42

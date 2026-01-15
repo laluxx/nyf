@@ -7,7 +7,6 @@ module Ops.ConfigOps
 import System.Directory (doesFileExist, getCurrentDirectory)
 import System.FilePath ((</>))
 import qualified Data.Text.IO as TIO
-import qualified Data.Text as T
 import Cli (commands, cmdName)
 import Data.Char (toLower)
 import Data.List (isPrefixOf)
