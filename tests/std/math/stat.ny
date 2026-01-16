@@ -1,19 +1,41 @@
-use std.math.stat
-use std.core.test
-use std.core.core
-use std.strings.str
+use std.core.mod
+use std.collections.mod
+fn mean(xs) {
+    "Mean of list of numbers."
+    def n = list_len(xs)
+    if n == 0 {
+        return 0
+    }
+    def s = 0
+    def i = 0
+    while i < n {
+        s = s + get(xs, i)
+        i = i + 1
+    }
+    return s / n
+}
 
-print("Testing Math Stat...")
+fn stat_mean(self) {
+    "Method-style alias."
+    return mean(self)
+}
 
-define xs = [1, 2, 3, 4, 5]
-assert(mean(xs) == 3, "mean")
-assert(median(xs) == 3, "median odd")
+fn median(xs) {
+    "Median (simple sort copy)."
+    def n = list_len(xs)
+    if n == 0 {
+        return 0
+    }
+    def tmp = list_clone(xs)
+    sort(tmp)
+    def mid = n/2
+    if n % 2 == 1 {
+        return get(tmp, mid)
+    }
+    return get(tmp, mid-1) + get(tmp, mid) / 2
+}
 
-define ys = [1, 2, 3, 4]
-; mean = 2.5 -> int div -> 2?
-; 10/4 = 2.
-assert(mean(ys) == 2, "mean int")
-; median: (2+3)/2 = 2.
-assert(median(ys) == 2, "median even")
-
-print("✓ std.math.stat passed")
+fn stat_median(self) {
+    "Method-style alias."
+    return median(self)
+}

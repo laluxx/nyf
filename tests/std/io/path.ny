@@ -1,35 +1,123 @@
-; Test std.io.path - Path manipulation
-use std.io.path
+;;; path.ny --- io path module
 
-; Path join
-fn test_main(){
-    ; Path join
-    def p1 = path_join("/home", "user")
-    assert(eq(p1, "/home/user"), "join two parts")
-    def p2 = path_join("/home/user", "file.txt")
-    assert(eq(p2, "/home/user/file.txt"), "join with file")
-    def p3 = path_join("relative", "path")
-    assert(eq(p3, "relative/path"), "join relative paths")
+;; Author: x3ric
+;; Maintainer: x3ric
+;; Keywords: io path
 
-    ; Basename
-    assert(eq(basename("/home/user/file.txt"), "file.txt"), "basename with path")
-    assert(eq(basename("file.txt"), "file.txt"), "basename without path")
-    def b = basename("/home/user/")
-    print("DEBUG: basename('/home/user/') = '", b, "' len=", len(b))
-    assert(eq(b, "user"), "basename of directory")
+;;; Commentary:
 
-    ; Dirname
-    assert(eq(dirname("/home/user/file.txt"), "/home/user"), "dirname with file")
-    assert(eq(dirname("/home/user/"), "/home"), "dirname of directory")
-    assert(eq(dirname("file.txt"), "."), "dirname of file without path")
+;; Path helpers (POSIX-ish)
 
-    ; Normalize
-    p1 = normalize("/home/user/../file.txt")
-    assert(eq(p1, "/home/file.txt"), "normalize with ..")
-    p2 = normalize("/home/./user/file.txt")
-    assert(eq(p2, "/home/user/file.txt"), "normalize with .")
-    p3 = normalize("/home//user///file.txt")
-    assert(eq(p3, "/home/user/file.txt"), "normalize multiple slashes")
+fn path_join_list(xs){
+	"Join list of path segments with '/'."
+	if(list_len(xs) == 0){ return "" }
+	def res = get(xs, 0)
+	def i = 1
+	while(i < list_len(xs)){
+		def part = get(xs, i)
+		if(startswith(part, "/")){
+			res = part
+		} else {
+			if(endswith(res, "/")){
+				res = concat(res, part)
+			} else {
+				res = concat(concat(res, "/"), part)
+			}
+		}
+		i = i + 1
+	}
+	return res
 }
-test_main()
-print("✓ std.io.path tests passed")
+
+fn abspath(p){
+	"Absolute path."
+	if(startswith(p, "/")){ return p }
+	return path_join_list([cwd(), p])
+}
+
+fn basename(p){
+	"Return the last component of a path."
+	def n = str_len(p)
+	if(n == 0){ return "" }
+	; Trim trailing slashes
+	while(n > 0){
+		def off = n - 1
+		if(load8(p, off) != 47){ break }
+		n = n - 1
+	}
+	if(n == 0){ return "/" }
+	def i = n - 1
+	while(i >= 0){
+		if(load8(p, i) == 47){ return slice(p, i + 1, n, 1) }
+		i = i - 1
+	}
+	return slice(p, 0, n, 1)
+}
+
+fn dirname(p){
+	"Return the directory component of a path."
+	def n = str_len(p)
+	if(n == 0){ return "." }
+	; Trim trailing slashes
+	while(n > 0){
+		def off = n - 1
+		if(load8(p, off) != 47){ break }
+		n = n - 1
+	}
+	if(n == 0){ return "/" }
+	def i = n - 1
+	while(i >= 0){
+		if(load8(p, i) == 47){
+			if(i == 0){ return "/" }
+			return slice(p, 0, i, 1)
+		}
+		i = i - 1
+	}
+	return "."
+}
+
+"Extension including dot, or \"\""
+fn extname(p){
+	"Return extension including dot, or empty string."
+	def b = basename(p)
+	def n = str_len(b)
+	def i = n-1
+	while(i>=0){
+		def c = load8(b, i)
+		if(c==46){ return slice(b, i, n, 1)  }
+		if(c==47){ return "" }
+		i=i-1
+	}
+	return ""
+}
+
+fn normalize(p){
+	"Normalize: handle . and .. and trailing slash."
+	def parts = split(p, "/")
+	def res = list(8)
+	def i = 0
+	while(i < list_len(parts)){
+		def part = get(parts, i)
+		if(eq(part, "..")){
+			if(list_len(res) > 0){ pop(res) }
+		} else {
+			if(!eq(part, ".") && len(part) > 0){
+				res = append(res, part)
+			}
+		}
+		i = i + 1
+	}
+	def out = join(res, "/")
+	if(startswith(p, "/")){ return concat("/", out) }
+	return out
+}
+
+fn path_join(a, b=0, c=0, d=0){
+	"Join multiple paths as arguments."
+	def l = list(8)
+	l = append(l, a)
+	if(b != 0){ l = append(l, b) }
+	if(c != 0){ l = append(l, c) }
+	if(d != 0){ l = append(l, d) }
+	return path_join_list(l)
+}

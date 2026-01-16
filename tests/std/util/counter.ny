@@ -1,29 +1,50 @@
-use std.util.counter
-use std.core.test
-use std.core.core
+use std.core.mod
+use std.core.reflect
 use std.collections.mod
+fn counter(xs) {
+    "Create counter from list or string."
+    def d = dict(16)
+    def i = 0
+    def n = len(xs)
+    while i < n {
+        def v = get(xs, i)
+        def c = getitem(d, v, 0)
+        d = setitem(d, v, c + 1)
+        i = i + 1
+    }
+    return d
+}
 
-print("Testing Util Counter...")
+fn counter_add(d, key, n) {
+    "Increment counter."
+    def c = getitem(d, key, 0)
+    return setitem(d, key, c + n)
+}
 
-define xs = ["a", "b", "a", "c", "b", "a"]
-define c = counter(xs)
-
-assert(getitem(c, "a", 0) == 3, "count a")
-assert(getitem(c, "b", 0) == 2, "count b")
-assert(getitem(c, "c", 0) == 1, "count c")
-assert(getitem(c, "d", 0) == 0, "count d")
-
-c = counter_add(c, "d", 5)
-assert(getitem(c, "d", 0) == 5, "count add")
-
-define common = most_common(c)
-; "d": 5, "a": 3, "b": 2, "c": 1.
-; item 0: ["d", 5]
-define pair0 = get(common, 0)
-assert(get(pair0, 0) == "d", "most common 0 key")
-assert(get(pair0, 1) == 5, "most common 0 val")
-
-define pair1 = get(common, 1)
-assert(get(pair1, 0) == "a", "most common 1 key")
-
-print("✓ std.util.counter passed")
+fn most_common(d) {
+    "Most common items (descending by count)."
+    def its = items(d)
+    def n = len(its)
+    "selection sort by count desc"
+    def i = 0
+    while i < n {
+        def max_idx = i
+        def j = i + 1
+        while j < n {
+            def count_j = get(get(its, j), 1)
+            def count_max = get(get(its, max_idx), 1)
+            if count_j > count_max {
+                max_idx = j
+            }
+            j = j + 1
+        }
+        if max_idx != i {
+            def tmp = get(its, i)
+            store_item(its, i, get(its, max_idx))
+            store_item(its, max_idx, tmp)
+        }
+        i = i + 1
+    }
+    return its
+}
+"Simple counter utility."

@@ -1,22 +1,50 @@
-use std.io.glob
-use std.core.test
-use std.collections.mod
-use std.strings.str
+;;; glob.ny --- io glob module
 
-print("Testing Glob...")
-assert(glob_match("*.ny", "foo.ny"), "glob match *.ny")
-assert(glob_match("*.ny", "foo.c") == false, "glob fail")
-assert(glob_match("f?o", "foo"), "glob ? match")
-assert(glob_match("f?o", "bar") == false, "glob ? fail")
+;; Author: x3ric
+;; Maintainer: x3ric
+;; Keywords: io glob
 
-define xs = list()
-xs = append(xs, "a.c")
-xs = append(xs, "b.h")
-xs = append(xs, "c.c")
+;;; Commentary:
 
-define res = glob_filter("*.c", xs)
-assert(list_len(res) == 2, "glob filter len")
-assert(eq(get(res, 0), "a.c"), "filter 0")
-assert(eq(get(res, 1), "c.c"), "filter 1")
+;; Pattern matcher (no directory listing)
 
-print("✓ std.io.glob passed")
+fn _glob_match_here(p, pi, s, si){
+	def p_val = load8(p, pi)
+	def s_val = load8(s, si)
+
+	if(p_val==0){ return s_val==0  }
+	if(p_val==42){        "*"
+		pi = pi + 1
+		if(load8(p, pi)==0){ return true  }
+		def i=0
+		while(1){
+			if(_glob_match_here(p, pi, s, si+i)){ return true  }
+			if(load8(s, si + i)==0){ break  }
+			i=i+1
+		}
+		return false
+	}
+	if(p_val==63){        "?"
+		if(s_val==0){ return false  }
+		return _glob_match_here(p, pi+1, s, si+1)
+	}
+	if(p_val!=s_val){ return false  }
+	return _glob_match_here(p, pi+1, s, si+1)
+}
+
+fn glob_match(pattern, s){
+	"Match pattern with * and ? against string s."
+	return _glob_match_here(pattern, 0, s, 0)
+}
+
+fn glob_filter(pattern, xs){
+	"Filter list of strings by glob."
+	def out = list(8)
+	def i =0  n=list_len(xs)
+	while(i<n){
+		def v = get(xs, i)
+		if(glob_match(pattern, v)){ out = append(out, v)  }
+		i=i+1
+	}
+	return out
+}

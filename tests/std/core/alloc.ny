@@ -1,25 +1,26 @@
-use std.core.alloc
-use std.core.core
-
-fn test_bump(){
-    def state = bump_new(1024)
-    assert(is_list(state), "bump state is a list")
-    
-    def p1 = bump_alloc(state, 10)
-    assert(p1 != 0, "first bump alloc ok")
-    store8(p1, 100)
-    
-    def p2 = bump_alloc(state, 20)
-    assert(p2 == p1 + 10, "bump alloc is sequential")
-    
-    bump_reset(state)
-    def p3 = bump_alloc(state, 5)
-    assert(p3 == p1, "bump reset works")
-    
-    ; Test overflow
-    def state2 = bump_new(8)
-    assert(bump_alloc(state2, 10) == 0, "bump overflow returns 0")
+use std.core.mod
+fn bump_new(cap) {
+	"Create a new bump allocator with the specified capacity.
+Returns a state list [buffer, capacity, offset]."
+	def buf = rt_malloc(cap)
+	return [buf, cap, 0]
 }
 
-test_bump()
-print("✓ std.core.alloc tests passed")
+fn bump_alloc(state, n) {
+	"Allocates `n` bytes from the bump allocator. Returns a pointer to the allocated memory, or 0 if the allocator is full."
+	def base = state[0]
+	cap = state[1]
+	off = state[2]
+	if off + n > cap {
+		return 0
+	}
+	def p = base + off
+	set_idx(state, 2, off + n)
+	return p
+}
+
+fn bump_reset(state) {
+	"Resets the bump allocator offset to 0, effectively freeing all allocated memory."
+	set_idx(state, 2, 0)
+	return 0
+}

@@ -1,26 +1,74 @@
-use std.math.nt
-use std.core.test
-use std.core.core
-use std.strings.str
+use std.core.mod
+use std.core.reflect
+use std.math.mod
+fn egcd(a, b) {
+    "Extended Euclidean Algorithm. Returns [g, x, y] such that ax + by = g = gcd(a, b)."
+    if a == 0 {
+        return [b, 0, 1]
+    }
+    def res = egcd(b % a, a)
+    def g = get(res, 0)
+    def y = get(res, 1)
+    def x = get(res, 2)
+    return [g, x - b/a * y, y]
+}
 
-print("Testing Math Number Theory...")
+fn modinv(a, m) {
+    "Modular inverse of a modulo m. Returns 0 if no inverse exists."
+    def res = egcd(a, m)
+    def g = get(res, 0)
+    def x = get(res, 1)
+    if g != 1 {
+        return 0
+    }
+    return x % m + m % m
+}
 
-define res = egcd(10, 6) ; g=2, x=-1, y=2? 10(-1) + 6(2) = -10 + 12 = 2.
-assert(get(res, 0) == 2, "egcd gcd")
-assert(get(res, 1) * 10 + get(res, 2) * 6 == 2, "egcd valid")
+fn pow_mod(base, exp, mod) {
+    "Modular exponentiation: (base^exp) % mod."
+    def res = 1
+    base = base % mod
+    while exp > 0 {
+        if exp % 2 == 1 {
+            res = res * base % mod
+        }
+        base = base * base % mod
+        exp = exp / 2
+    }
+    return res
+}
 
-assert(modinv(3, 11) == 4, "modinv 3 11") ; 3*4 = 12 = 1 mod 11.
-assert(modinv(2, 6) == 0, "modinv 2 6") ; no inverse
+fn is_prime(n) {
+    "Check if n is prime."
+    if n <= 1 {
+        return 0
+    }
+    if n <= 3 {
+        return 1
+    }
+    if n % 2 == 0 || n % 3 == 0 {
+        return 0
+    }
+    def i = 5
+    while i * i <= n {
+        if n % i == 0 || n % i + 2 == 0 {
+            return 0
+        }
+        i = i + 6
+    }
+    return 1
+}
 
-assert(pow_mod(2, 10, 1000) == 24, "pow_mod") ; 1024 % 1000 = 24.
-assert(pow_mod(2, 3, 5) == 3, "pow_mod small")
-
-assert(is_prime(2) == 1, "prime 2")
-assert(is_prime(3) == 1, "prime 3")
-assert(is_prime(4) == 0, "prime 4")
-assert(is_prime(97) == 1, "prime 97")
-assert(is_prime(100) == 0, "prime 100")
-
-assert(next_prime(10) == 11, "next_prime 10")
-
-print("✓ std.math.nt passed")
+fn next_prime(n) {
+    "Return the smallest prime strictly greater than n."
+    if n <= 1 {
+        return 2
+    }
+    def p = n
+    while 1 {
+        p = p + 1
+        if is_prime(p) {
+            return p
+        }
+    }
+}

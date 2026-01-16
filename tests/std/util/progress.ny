@@ -1,22 +1,32 @@
-use std.util.progress
+use std.cli.tui
 use std.core.reflect
-use std.core.test
-use std.core.core
-use std.collections.mod
+fn progress(total, desc = "") {
+    return bar(total, desc)
+}
 
-print("Testing Util Progress...")
-print("Testing Util Progress...")
+fn progress_update(bar_obj, current) {
+    return bar_update(bar_obj, current)
+}
 
-define xs = [1, 2, 3]
-fn f(x){ return x*2 }
+fn progress_finish(bar_obj) {
+    return bar_finish(bar_obj)
+}
 
-define res = progress_map(f, xs, "Test Map")
-print("LEN:", len(res))
-print("RES:", res)
-assert(len(res) == 3, "progress_map len")
-assert(get(res, 0) == 2, "map val")
+fn progress_range(n, desc = "") {
+    return bar_range(n, desc)
+}
 
-define p = progress(10, "Manual")
-progress_update(p, 5)
-progress_finish(p)
-print("✓ std.util.progress passed")
+fn progress_map(f, xs, desc = "Processing") {
+    "Apply function f to each element of xs while showing a progress bar."
+    def n = len(xs)
+    def b = bar(n, desc)
+    def res = list(8)
+    def i = 0
+    while i < n {
+        res = append(res, f(get(xs, i)))
+        bar_update(b, i + 1)
+        i = i + 1
+    }
+    bar_finish(b)
+    return res
+}

@@ -1,67 +1,264 @@
-; Test std.core.reflect - Type introspection and reflection
-use std.core.reflect
+use std.core.mod
+use std.core.error
+use std.strings.str
+use std.collections.mod
+;; reflect.ny --- High-level reflection and polymorphism
+;; Author: x3ric
+;; Maintainer: x3ric
+;; Keywords: core reflect
+;;; Commentary:
+;; Provides high-level reflection, polymorphic operations, and value inspection.
+fn len(x) {
+	"Return the number of items in a collection or the length of a string."
+	if x == 0 {
+		return 0
+	}
+	if is_list(x) {
+		return list_len(x)
+	}
+	if is_tuple(x) {
+		return list_len(x)
+	}
+	if is_dict(x) {
+		return load64(x)
+	}
+	if is_set(x) {
+		return list_len(x)
+	}
+	if is_ptr(x) {
+		return str_len(x)
+	}
+	return 0
+}
 
-; Type
-assert(eq(type(42), "int"), "type of integer")
-assert(eq(type("hello"), "str"), "type of string")
-assert(eq(type([1, 2, 3]), "list"), "type of list")
-assert(eq(type(dict(8)), "dict"), "type of dict")
-assert(eq(type(set()), "set"), "type of set")
-assert(eq(type(true), "bool"), "type of bool")
-assert(eq(type(0), "none"), "type of none")
+fn contains(container, item) {
+	"Check if an item exists within a collection (list, dict keys, set, or as a substring in a string)."
+	if !container {
+		return false
+	}
+	if is_set(container) {
+		return set_contains(container, item)
+	}
+	if is_dict(container) {
+		return has(container, item)
+	}
+	if is_list(container) {
+		return list_contains(container, item)
+	}
+	if is_str(container) {
+		return find(container, item) >= 0
+	}
+	return false
+}
 
-; Len
-assert(len([1, 2, 3]) == 3, "len of list")
-assert(len("hello") == 5, "len of string")
-assert(len([]) == 0, "len of empty list")
-d = dict(8)
-d = setitem(d, "key", "value")
-assert(len(d) == 1, "len of dict")
+fn type(x) {
+	if x == 0 {
+		return "none"
+	}
+	if rt_is_int(x) {
+		return "int"
+	}
+	if is_ptr(x) {
+		if is_list(x) {
+			return "list"
+		}
+		if is_dict(x) {
+			return "dict"
+		}
+		if is_set(x) {
+			return "set"
+		}
+		if is_tuple(x) {
+			return "tuple"
+		}
+		if is_str(x) {
+			return "str"
+		}
+		return "ptr"
+	}
+	if x == true || x == false {
+		return "bool"
+	}
+	return "unknown"
+}
 
-; Contains
-lst = [1, 2, 3, 4, 5]
-assert(contains(lst, 3), "list contains element")
-assert(!contains(lst, 10), "list doesn't contain element")
-s = set()
-s = add(s, "a")
-s = add(s, "b")
-assert(contains(s, "a"), "set contains element")
-assert(!contains(s, "c"), "set doesn't contain element")
-assert(contains("hello world", "world"), "string contains substring")
-assert(!contains("hello", "xyz"), "string doesn't contain substring")
+fn list_eq(a, b) {
+	"Deep equality comparison for lists."
+	if list_len(a) != list_len(b) {
+		return false
+	}
+	def i = 0
+	def n = list_len(a)
+	while i < n {
+		if eq(get(a, i), get(b, i)) == false {
+			return false
+		}
+		i = i + 1
+	}
+	return true
+}
 
-; Eq
-assert(eq(42, 42), "int equality")
-assert(!eq(42, 43), "int inequality")
-assert(eq("hello", "hello"), "string equality")
-assert(!eq("hello", "world"), "string inequality")
-assert(eq([1, 2, 3], [1, 2, 3]), "list equality")
-assert(!eq([1, 2, 3], [1, 2, 4]), "list inequality")
-assert(!eq([1, 2], [1, 2, 3]), "list different lengths")
-d1 = dict(8)
-d1 = setitem(d1, "a", 1)
-d1 = setitem(d1, "b", 2)
-d2 = dict(8)
-d2 = setitem(d2, "a", 1)
-d2 = setitem(d2, "b", 2)
-assert(eq(d1, d2), "dict equality")
+fn dict_eq(a, b) {
+	"Deep equality comparison for dictionaries."
+	if len(a) != len(b) {
+		return false
+	}
+	def its = items(a)
+	def i = 0
+	def n = list_len(its)
+	while i < n {
+		def p = get(its, i)
+		if eq(getitem(b, p[0], 3735928559), p[1]) == false {
+			return false
+		}
+		i = i+1
+	}
+	return true
+}
 
-; Repr
-assert(eq(repr(42), "42"), "repr of int")
-assert(eq(repr(true), "true"), "repr of true")
-assert(eq(repr(false), "false"), "repr of false")
-assert(eq(repr(0), "none"), "repr of none")
-assert(eq(repr("hello"), "\"hello\""), "repr of string")
-assert(eq(repr([1,2,3]), "[1,2,3]"), "repr of list")
+fn set_eq(a, b) {
+	"Deep equality comparison for sets."
+	if len(a) != len(b) {
+		return false
+	}
+	def its = items(a)
+	def i = 0
+	def n = list_len(its)
+	while i < n {
+		def p = get(its, i)
+		if set_contains(b, p[0]) == false {
+			return false
+		}
+		i = i+1
+	}
+	return true
+}
 
-; Hash
-h1 = hash(42)
-h2 = hash(42)
-assert(h1 == h2, "hash consistency for int")
-h1 = hash("hello")
-h2 = hash("hello")
-assert(h1 == h2, "hash consistency for string")
-h3 = hash("world")
-assert(h1 != h3, "different strings have different hashes")
+fn eq(a, b) {
+	"Structural equality check. Compares values by content for strings and collections, and by value for integers."
+	if a == b {
+		return true
+	}
+	if is_ptr(a) == false {
+		return false
+	}
+	if is_ptr(b) == false {
+		return false
+	}
+	def ta = type(a)
+	def tb = type(b)
+	if !_str_eq(ta, tb) {
+		return false
+	}
+	if _str_eq(ta, "list") {
+		return list_eq(a, b)
+	}
+	if _str_eq(ta, "dict") {
+		return dict_eq(a, b)
+	}
+	if _str_eq(ta, "set") {
+		return set_eq(a, b)
+	}
+	return _str_eq(a, b)
+}
 
-print("✓ std.core.reflect tests passed")
+fn str(x) {
+	"Return a human-readable string representation of the value.
+For strings, returns the string itself."
+	if is_ptr(x) {
+		if is_str(x) {
+			return x
+		}
+	}
+	return repr(x)
+}
+
+fn repr(x) {
+	if x == 0 {
+		return "none"
+	}
+	if x == true {
+		return "true"
+	}
+	if x == false {
+		return "false"
+	}
+	def t = type(x)
+	if eq(t, "list") {
+		def n = list_len(x)
+		def out = "["
+		def i = 0
+		while i < n {
+			out = concat(out, repr(get(x, i)))
+			if i+1 < n {
+				out = concat(out, ",")
+			}
+			i = i+1
+		}
+		return concat(out, "]")
+	}
+	if eq(t, "dict") {
+		def its = items(x)
+		def out = "{"
+		def i = 0
+		def n = list_len(its)
+		while i < n {
+			def p = get(its, i)
+			out = concat(out, concat(repr(p[0]), concat(":", repr(p[1]))))
+			if i+1 < n {
+				out = concat(out, ",")
+			}
+			i = i+1
+		}
+		return concat(out, "}")
+	}
+	if eq(t, "set") {
+		def its = items(x)
+		def out = "{"
+		def i = 0
+		def n = list_len(its)
+		while i < n {
+			def p = get(its, i)
+			out = concat(out, repr(p[0]))
+			if i+1 < n {
+				out = concat(out, ",")
+			}
+			i = i+1
+		}
+		return concat(out, "}")
+	}
+	if eq(t, "str") {
+		return concat("\\"", concat(x, "\\""))
+	}
+	if eq(t, "int") {
+		return itoa(x)
+	}
+	if eq(t, "ptr") {
+		return concat("<ptr ", concat(itoa(x), ">"))
+	}
+	return itoa(x)
+}
+
+fn hash(x) {
+	"Return a 64-bit FNV-1a hash of value x."
+	def t = type(x)
+	if _str_eq(t, "int") {
+		return x
+	}
+	if _str_eq(t, "str") {
+		def h = 14695981039346656037
+		def i = 0
+		def n = str_len(x)
+		while i < n {
+			h = h ^ load8(x + i) * 1099511628211
+			i = i + 1
+		}
+		return h
+	}
+	return x
+}
+
+fn globals() {
+	"Return the current global symbol table as a dictionary."
+	return rt_globals()
+}

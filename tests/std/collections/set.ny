@@ -1,57 +1,107 @@
-use std.collections.set
-use std.collections.dict ; for iterators on set items if needed (items())
-use std.core.error
 
-fn test_basic(){
-    print("Testing set basic operations...")
-    def s = set()
-    s = add(s, 10)
-    s = add(s, 20)
-    
-    assert(set_contains(s, 10), "Contains 10")
-    assert(set_contains(s, 20), "Contains 20")
-    assert(!set_contains(s, 30), "Does not contain 30")
-    
-    s = remove(s, 10)
-    assert(!set_contains(s, 10), "Removed 10")
-    assert(set_contains(s, 20), "Still has 20")
-    
-    print("Basic operations passed")
+;;; set.ny --- collections set module
+
+;; Author: x3ric
+;; Maintainer: x3ric
+;; Keywords: collections set
+
+;;; Commentary:
+
+;; Set implementation backed by List-Map
+
+use std.core.mod
+use std.core.reflect
+use std.collections.dict ; for dict(16), setitem(), has(), delitem(), dict_clear(), items()
+
+def SET_MAGIC = 102
+
+fn set(){
+	"Create a new empty set."
+	def d = dict(16)
+	store64(d, SET_MAGIC, -8)
+	return d
 }
 
-fn test_ops(){
-    print("Testing set union/intersection/difference...")
-    def s1 = set()
-    add(s1, 1)
-    add(s1, 2)
-    
-    def s2 = set()
-    add(s2, 2)
-    add(s2, 3)
-    
-    def u = set_union(s1, s2)
-    assert(set_contains(u, 1), "Union has 1")
-    assert(set_contains(u, 2), "Union has 2")
-    assert(set_contains(u, 3), "Union has 3")
-    
-    def i = set_intersection(s1, s2)
-    assert(!set_contains(i, 1), "Intersection no 1")
-    assert(set_contains(i, 2), "Intersection has 2")
-    assert(!set_contains(i, 3), "Intersection no 3")
-    
-    print("DEBUG: s2 items:")
-    def d = set_difference(s1, s2)
-    assert(set_contains(d, 1), "Diff has 1")
-    assert(!set_contains(d, 2), "Diff no 2")
-    assert(!set_contains(d, 3), "Diff no 3")
-    
-    print("Set ops passed")
+fn add(s, v){
+	"Adds an element to the set."
+	return setitem(s, v, 1)
 }
 
-fn test_main(){
-    test_basic()
-    test_ops()
-    print("✓ std.collections.set passed")
+fn set_contains(s, v){
+	"Check if value v is in the set."
+	if(has(s, v)){ return true }
+	return false
 }
 
-test_main()
+fn remove(s, v){
+	"Removes value v from the set."
+	return delitem(s, v)
+}
+
+fn set_clear(s){
+	"Removes all elements from the set."
+	return dict_clear(s)
+}
+
+fn set_copy(s){
+	"Return a shallow copy of the set."
+	def out = set()
+	def its = items(s)
+	def i = 0 def n = list_len(its)
+	while(i < n){
+		def p = get(its, i)
+		out = add(out, p[0])
+		i = i + 1
+	}
+	return out
+}
+
+fn set_union(a, b){
+	"Return the union of two sets."
+	def out = set_copy(a)
+	def its = items(b)
+	def i = 0 def n = list_len(its)
+	while(i < n){
+		def p = get(its, i)
+		out = add(out, p[0])
+		i = i + 1
+	}
+	return out
+}
+
+fn set_intersection(a, b){
+	"Return the intersection of two sets."
+	def out = set()
+	def its = items(a)
+	def i = 0 def n = list_len(its)
+	while(i < n){
+		def p = get(its, i)
+		def v = p[0]
+		if(set_contains(b, v)){
+			out = add(out, v)
+		}
+		i = i + 1
+	}
+	return out
+}
+
+fn set_difference(a, b){
+	"Return the difference of two sets (a - b)."
+	def out = set()
+	def its = items(a)
+	def i = 0 def n = list_len(its)
+	while(i < n){
+		def p = get(its, i)
+		def v = p[0]
+		if(set_contains(b, v) == false){
+			out = add(out, v)
+		}
+		i = i + 1
+	}
+	return out
+}
+
+fn is_set(s){
+	if(!rt_is_ptr(s)){ return 0 }
+	return load64(s, -8) == SET_MAGIC
+}

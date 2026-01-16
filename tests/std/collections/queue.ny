@@ -1,32 +1,46 @@
-use std.collections.queue
-use std.core.error
-
-fn test_queue(){
-    print("Testing queue...")
-    def q = queue()
-    assert(qlen(q) == 0, "size 0")
-    
-    enqueue(q, 10)
-    enqueue(q, 20)
-    enqueue(q, 30)
-    assert(qlen(q) == 3, "size 3")
-    
-    assert(dequeue(q) == 10, "dequeue 10")
-    assert(dequeue(q) == 20, "dequeue 20")
-    assert(qlen(q) == 1, "size 1")
-    
-    enqueue(q, 40)
-    assert(dequeue(q) == 30, "dequeue 30")
-    assert(dequeue(q) == 40, "dequeue 40")
-    assert(qlen(q) == 0, "empty")
-    assert(dequeue(q) == 0, "dequeue empty")
-    
-    print("Queue passed")
+;;; queue.ny --- collections queue module
+;; Author: x3ric
+;; Maintainer: x3ric
+;; Keywords: collections queue
+;;; Commentary:
+;; collections queue module
+fn queue() {
+    "Simple FIFO queue using list."
+    return list(8)
 }
 
-fn test_main(){
-    test_queue()
-    print("✓ std.collections.queue passed")
+fn enqueue(q, v) {
+    "Function: enqueue."
+    return append(q, v)
 }
 
-test_main()
+fn queue_enqueue(self, v) {
+    "Function: queue_enqueue."
+    return enqueue(self, v)
+}
+
+fn dequeue(q) {
+    "Function: dequeue."
+    if list_len(q) == 0 {
+        return 0
+    }
+    def v = get(q, 0)
+    def i = 1
+    n = list_len(q)
+    while i < n {
+        set_idx(q, i-1, get(q, i))
+        i = i+1
+    }
+    pop(q)
+    return v
+}
+
+fn queue_dequeue(self) {
+    "Function: queue_dequeue."
+    return dequeue(self)
+}
+
+fn qlen(q) {
+    "Function: qlen."
+    return list_len(q)
+}

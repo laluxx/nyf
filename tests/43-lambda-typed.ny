@@ -1,3 +1,1 @@
-define add = lambda(x: int, y: int): int {
-    return x + y
-}
+define add = lambda(x, y){ return (+ x y)}

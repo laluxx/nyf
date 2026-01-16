@@ -43,12 +43,7 @@ main = do
 
 -- | DWIM behavior: Do What I Mean when no arguments provided
 dwimBehavior :: String -> IO ()
-dwimBehavior progName = do
-  currentDir <- getCurrentDirectory
-  maybeProjectRoot <- LintOps.findProjectRoot currentDir
-  case maybeProjectRoot of
-    Just _ -> LintOps.statsPath ""  -- In a project, show stats
-    Nothing -> HelpSystem.printUsage  -- Not in a project, show help
+dwimBehavior progName = HelpSystem.printUsage
 
 -- | Suggest similar commands if user made a typo
 suggestSimilarCommands :: [String] -> IO ()

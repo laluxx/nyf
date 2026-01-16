@@ -35,6 +35,7 @@ dependencies:
 - wai-websockets
 - websockets
 - http-types
+- containers
 
 nytryx-options:
 - -Wall

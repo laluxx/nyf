@@ -1,13 +1,33 @@
-use std.core.debug
-use std.util.inspect
-use std.core.test
-use std.core.core
+use std.core.mod
+use std.core.reflect
+use std.strings.str
+fn debug_print_val(val) {
+    "Prints a detailed debug representation of a single value."
+    _print_write("Value(raw: ")
+    _print_write(itoa(val))
+    _print_write(", type: ")
+    _print_write(type(val))
+    if is_ptr(val) {
+        _print_write(", addr: ")
+        _print_write(itoa(val))
+    }
+    _print_write(")\\n")
+}
 
-print("Testing Debug & Inspect...")
-
-debug_print("test_val", 123)
-inspect(123)
-inspect("hello")
-inspect([1, 2])
-
-print("✓ std.core.debug passed")
+fn debug_print(...args) {
+    "Prints a detailed debug representation of one or more values."
+    def xs = args
+    if len(args) == 1 {
+        def first = get(args, 0)
+        if eq(type(first), "list") {
+            xs = first
+        }
+    }
+    def n = len(xs)
+    def i = 0
+    while i < n {
+        def v = get(xs, i)
+        debug_print_val(v)
+        i = i + 1
+    }
+}

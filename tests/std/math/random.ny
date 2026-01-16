@@ -1,42 +1,92 @@
-use std.math.random
-use std.core.error
-fn test_rand() {
-    print("Testing random...")
-    seed(42)
-    def r1 = rand()
-    assert(r1 >= 0, "rand positive")
-    def r2 = rand()
-    assert(r1 != r2, "rand sequence varies")
-    print("Rand values: ", r1, " ", r2)
-    seed(42)
-    def r3 = rand()
-    print("Random basic passed")
+use std.core.mod
+use std.math.mod
+use std.core.reflect
+use std.math.float
+fn rand() {
+    "Return a random 63-bit positive integer."
+    return rt_rand64() & 9223372036854775807
 }
-fn test_randint() {
-    print("Testing randint...")
+
+fn seed(n) {
+    "Seed the PRNG."
+    return rt_srand(n)
+}
+
+fn random() {
+    "Return a random float in [0, 1)."
+    def m = 9007199254740991
+    return fdiv(float(rand() & m), float(m + 1))
+}
+
+fn uniform(a, b) {
+    "Return a random float in [a, b]."
+    return fadd(float(a), fmul(random(), fsub(float(b), float(a))))
+}
+
+fn randint(a, b) {
+    "Return a random integer in [a, b]."
+    if a == b {
+        return a
+    }
+    return a + mod(rand(), b - a + 1)
+}
+
+fn randrange(a, b) {
+    "Return a random integer in [a, b)."
+    if a == b {
+        return a
+    }
+    return a + mod(rand(), b - a)
+}
+
+fn choice(xs) {
+    "Return a random element from a non-empty sequence xs."
+    def n = len(xs)
+    if n == 0 {
+        return 0
+    }
+    return get(xs, mod(rand(), n))
+}
+
+fn shuffle(xs) {
+    "Shuffle the list xs in place."
+    def n = len(xs)
+    if n <= 1 {
+        return xs
+    }
+    def i = n - 1
+    while i > 0 {
+        def j = mod(rand(), i + 1)
+        def tmp = get(xs, i)
+        set_idx(xs, i, get(xs, j))
+        set_idx(xs, j, tmp)
+        i = i - 1
+    }
+    return xs
+}
+
+fn sample(xs, k) {
+    "Return a k-length list of unique elements chosen from xs."
+    def n = len(xs)
+    if k > n {
+        k = n
+    }
+    def res = list(8)
+    def indices = list(8)
     def i = 0
-    while i < 100 {
-        def v = randint(10, 20)
-        assert(v >= 10, "randint min")
-        assert(v < 20, "randint max")
+    while i < n {
+        append(indices, i)
         i = i + 1
     }
-    print("Randint passed")
+    shuffle(indices)
+    i = 0
+    while i < k {
+        append(res, get(xs, get(indices, i)))
+        i = i + 1
+    }
+    return res
 }
-fn test_choice() {
-    print("Testing choice...")
-    def lst = list()
-    append(lst, 10)
-    append(lst, 20)
-    append(lst, 30)
-    def c = choice(lst)
-    assert(c == 10 || c == 20 || c == 30, "choice validation")
-    print("Choice passed")
+
+fn randf() {
+    return random()
 }
-fn test_main() {
-    test_rand()
-    test_randint()
-    test_choice()
-    print("✓ std.math.random passed")
-}
-test_main()

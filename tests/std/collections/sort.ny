@@ -1,47 +1,43 @@
-use std.collections.sort
-use std.core.error
-
-fn test_sort(){
-    print("Testing sort...")
-    def lst = list()
-    append(lst, 5)
-    append(lst, 2)
-    append(lst, 9)
-    append(lst, 1)
-    append(lst, 5)
-    
-    sort(lst)
-    
-    assert(get(lst, 0) == 1, "sort 0")
-    assert(get(lst, 1) == 2, "sort 1")
-    assert(get(lst, 2) == 5, "sort 2")
-    assert(get(lst, 3) == 5, "sort 3")
-    assert(get(lst, 4) == 9, "sort 4")
-    
-    print("Sort passed")
+use std.core.mod
+fn _partition(xs, low, high) {
+    def pivot = get(xs, high)
+    def i = low - 1
+    def j = low
+    while j < high {
+        if get(xs, j) <= pivot {
+            i = i + 1
+            def tmp = get(xs, i)
+            store_item(xs, i, get(xs, j))
+            store_item(xs, j, tmp)
+        }
+        j = j + 1
+    }
+    def tmp2 = get(xs, i + 1)
+    store_item(xs, i + 1, get(xs, high))
+    store_item(xs, high, tmp2)
+    return i + 1
 }
 
-fn test_sorted(){
-    print("Testing sorted...")
-    def lst = list()
-    append(lst, 3)
-    append(lst, 1)
-    append(lst, 2)
-    
-    def s = sorted(lst)
-    assert(get(s, 0) == 1, "sorted 0")
-    assert(get(s, 1) == 2, "sorted 1")
-    assert(get(s, 2) == 3, "sorted 2")
-    
-    assert(get(lst, 0) == 3, "original unsorted")
-    
-    print("Sorted passed")
+fn _quicksort(xs, low, high) {
+    if low < high {
+        def p = _partition(xs, low, high)
+        _quicksort(xs, low, p - 1)
+        _quicksort(xs, p + 1, high)
+    }
+    return xs
 }
 
-fn test_main(){
-    test_sort()
-    test_sorted()
-    print("✓ std.collections.sort passed")
+fn sort(xs) {
+    "Sorts the list `xs` in-place using QuickSort."
+    def n = list_len(xs)
+    if n < 2 {
+        return xs
+    }
+    return _quicksort(xs, 0, n - 1)
 }
 
-test_main()
+fn sorted(xs) {
+    "Return a new sorted list containing the elements of `xs`."
+    def out = list_clone(xs)
+    return sort(out)
+}

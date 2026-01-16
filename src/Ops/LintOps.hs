@@ -1,154 +1,312 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ExistentialQuantification #-}
+
 module Ops.LintOps where
 
-import System.Directory (getDirectoryContents, doesDirectoryExist, getCurrentDirectory, doesFileExist)
-import System.FilePath ((</>), takeExtension, takeFileName, takeDirectory)
-import Data.List (sortOn)
+
+import System.Directory (getDirectoryContents, doesDirectoryExist, getCurrentDirectory, doesFileExist, canonicalizePath)
+import System.FilePath ((</>), takeExtension, takeFileName)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
-import Data.Char (isSpace)
-import Data.Maybe (fromMaybe)
-import Text.Read (readMaybe)
+import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
+import Data.List (sortOn, nub, partition)
+import Data.Maybe (catMaybes, fromMaybe)
+import Text.Megaparsec (parse, errorBundlePretty)
+import qualified Parser
+import qualified AST
 
---- TODO Stuff [0/2]
--- [ ] Gray gradient for the grids
--- [ ] Find the License interactively i think it's hardcoded to MIT
+-- Import all modules
+import Ops.LintOps.Core
+import Ops.LintOps.CFG
+import Ops.LintOps.Correctness
+import qualified Ops.LintOps.Safety as Safety
+import qualified Ops.LintOps.Security as Security
+import qualified Ops.LintOps.Performance as Performance
+import qualified Ops.LintOps.Style as Style
+import qualified Ops.LintOps.Documentation as Documentation
+import qualified Ops.LintOps.DeadCode as DeadCode
+import qualified Ops.LintOps.Unused as Unused
+import qualified Ops.LintOps.Complexity as Complexity
 
--- | Parse and check syntax
+--- CHECK REGISTRY
+
+-- Existential wrapper for lint checks
+data AnyCheck = forall a. LintCheck a => AnyCheck a
+
+allChecks :: [AnyCheck]
+allChecks =
+  -- Correctness checks
+  [ AnyCheck DivisionByZeroCheck
+  , AnyCheck ArrayBoundsCheck
+  , AnyCheck OffByOneCheck
+  , AnyCheck InfiniteLoopCheck
+  , AnyCheck NullAccessCheck
+  , AnyCheck UninitializedVarCheck
+
+  -- Dead code checks
+  , AnyCheck DeadCode.DeadCodeCheck
+  , AnyCheck DeadCode.UnreachableLoopCheck
+
+  -- Safety checks
+  , AnyCheck Safety.ResourceLeakCheck
+  , AnyCheck Safety.DoubleReleaseCheck
+  , AnyCheck Safety.UseAfterFreeCheck
+
+  -- Security checks
+  , AnyCheck Security.SqlInjectionCheck
+  , AnyCheck Security.PathTraversalCheck
+  , AnyCheck Security.HardcodedSecretCheck
+  , AnyCheck Security.InsecureRandomCheck
+
+  -- Performance checks
+  , AnyCheck Performance.NestedLoopCheck
+  , AnyCheck Performance.InefficiientStringConcatCheck
+  , AnyCheck Performance.ConstantInLoopCheck
+
+  -- Style checks
+  , AnyCheck Style.LineLengthCheck
+  , AnyCheck Style.NamingConventionCheck
+  , AnyCheck Style.TrailingWhitespaceCheck
+  , AnyCheck Style.ImportOrderCheck
+
+  -- Documentation checks
+  , AnyCheck Documentation.MissingDocstringCheck
+  , AnyCheck Documentation.DocstringQualityCheck
+
+  -- Maintainability checks
+  , AnyCheck DeadCode.RedundantConditionCheck
+  , AnyCheck Unused.UnusedVariableCheck
+  , AnyCheck Unused.UnusedParameterCheck
+  , AnyCheck Unused.UnusedImportCheck
+  , AnyCheck Unused.UnusedFunctionCheck
+
+  -- Complexity checks
+  , AnyCheck Complexity.CyclomaticComplexityCheck
+  , AnyCheck Complexity.FunctionLengthCheck
+  , AnyCheck Complexity.ParameterCountCheck
+  , AnyCheck Complexity.CognitiveComplexityCheck
+  , AnyCheck Complexity.ExcessiveNestingCheck
+  ]
+
+-- Run a check if enabled
+runCheckIfEnabled :: AnyCheck -> AnalysisContext -> [LintIssue]
+runCheckIfEnabled (AnyCheck check) ctx =
+  if isEnabled check (ctxConfig ctx)
+  then runCheck check ctx
+  else []
+
+--- MAIN ENTRY POINTS
+
 lintPath :: FilePath -> IO ()
-lintPath _ = putStrLn "Error: LintOps.lintPath not implemented"
+lintPath path = lintPathWithConfig path defaultConfig
 
--- | Comprehensive validation (parse + lint)
-validatePath :: FilePath -> IO ()
-validatePath _ = putStrLn "Error: LintOps.validatePath not implemented"
+lintPathWithConfig :: FilePath -> LintConfig -> IO ()
+lintPathWithConfig path config = do
+  isFile <- doesFileExist path
+  isDir <- doesDirectoryExist path
 
--- Project configuration from package.yaml and format.yaml
-data ProjectConfig = ProjectConfig
-  { projectName :: String
-  , projectVersion :: String
-  , projectAuthor :: String
-  , projectLicense :: String
-  , projectGithub :: String
-  , projectDescription :: String
-  , formatIndentSize :: Int
-  , formatUseTabs :: Bool
-  , formatMaxLineLength :: Int
-  } deriving (Show)
+  if isFile && takeExtension path == ".ny"
+    then void (lintFileWithConfig path config)
+    else if isDir
+      then lintDirectoryWithConfig path config
+      else do
+        putStrLn ""
+        putStrLn $ "\x1b[1;31mError:\x1b[0m Invalid path: " ++ path
+        putStrLn "Expected a .ny file or directory"
+        putStrLn ""
 
--- | Show code statistics for .ny files
-statsPath :: FilePath -> IO ()
-statsPath path = do
-  -- Default to current directory if empty
-  actualPath <- if null path then getCurrentDirectory else return path
+lintDirectory :: FilePath -> IO ()
+lintDirectory dir = lintDirectoryWithConfig dir defaultConfig
 
-  -- Find project root
-  maybeProjectRoot <- findProjectRoot actualPath
+lintDirectoryWithConfig :: FilePath -> LintConfig -> IO ()
+lintDirectoryWithConfig dir config = do
+  nyFiles <- findNyFiles dir
 
-  case maybeProjectRoot of
-    Nothing -> do
+  -- Filter out ignored patterns
+  let filteredFiles = filter (not . shouldIgnore config) nyFiles
+
+  if null filteredFiles
+    then do
       putStrLn ""
-      putStrLn "\x1b[1;31mError:\x1b[0m Not in a Nytrix project"
+      putStrLn $ "\x1b[1;33mWarning:\x1b[0m No .ny files found in: " ++ dir
       putStrLn ""
-      putStrLn "Could not find \x1b[1mpackage.yaml\x1b[0m in current directory or any parent directory."
+    else do
       putStrLn ""
-      putStrLn "To create a new Nytrix project, run:"
-      putStrLn "  \x1b[32mnyf new\x1b[0m \x1b[36m<project-name>\x1b[0m"
+      putStrLn $ "\x1b[1;94mLinting\x1b[0m " ++ show (length filteredFiles) ++
+                 " files in: " ++ dir
       putStrLn ""
-    Just projectRoot -> do
-      -- Read project configuration
-      config <- readProjectConfig projectRoot
+      allIssues <- concat <$> mapM (\f -> lintFileQuietWithConfig f config) filteredFiles
+      displayLintSummary allIssues
 
-      -- Find all .ny files from the project root
-      nyFiles <- findNyFiles projectRoot
+lintFile :: FilePath -> IO [LintIssue]
+lintFile path = lintFileWithConfig path defaultConfig
 
-      if null nyFiles
-        then putStrLn $ "No .ny files found in project: " ++ projectRoot
+lintFileWithConfig :: FilePath -> LintConfig -> IO [LintIssue]
+lintFileWithConfig path config = do
+  content <- TIO.readFile path
+
+  case parse Parser.file path content of
+    Left parseErr -> do
+      putStrLn $ formatEmacsError path 1 1 "error" "Parse" "File failed to parse"
+      putStrLn $ indent 4 (errorBundlePretty parseErr)
+      return [LintIssue path (Just 1) (Just 1) Error Correctness "E000"
+              "File failed to parse" Nothing Nothing]
+
+    Right decls -> do
+      let ctx = buildContext path content decls config
+          allIssues = performAllChecks ctx
+
+      if null allIssues
+        then do
+          putStrLn $ "\x1b[1;32m✓\x1b[0m " ++ path ++ " \x1b[2m(no issues)\x1b[0m"
+          return []
         else do
-          fileStats <- mapM analyzeFile nyFiles
-          displayBeautifulStats projectRoot config fileStats
+          putStrLn $ "\x1b[1;33m⚠\x1b[0m " ++ path ++ " \x1b[2m(" ++
+                     show (length allIssues) ++ " issues)\x1b[0m"
+          mapM_ (putStrLn . formatIssueEmacs) allIssues
+          return allIssues
 
--- | Read project configuration from package.yaml and format.yaml
-readProjectConfig :: FilePath -> IO ProjectConfig
-readProjectConfig projectRoot = do
-  -- Read package.yaml
-  let packagePath = projectRoot </> "package.yaml"
-  packageExists <- doesFileExist packagePath
-  packageLines <- if packageExists
-    then fmap T.lines (TIO.readFile packagePath)
-    else return []
+lintFileQuiet :: FilePath -> IO [LintIssue]
+lintFileQuiet path = lintFileQuietWithConfig path defaultConfig
 
-  -- Read format.yaml
-  let formatPath = projectRoot </> "format.yaml"
-  formatExists <- doesFileExist formatPath
-  formatLines <- if formatExists
-    then fmap T.lines (TIO.readFile formatPath)
-    else return []
+lintFileQuietWithConfig :: FilePath -> LintConfig -> IO [LintIssue]
+lintFileQuietWithConfig path config = do
+  content <- TIO.readFile path
 
-  let getName = extractYamlValue "name:" packageLines
-      getVersion = extractYamlValue "version:" packageLines
-      getAuthor = extractYamlValue "author:" packageLines
-      getLicense = extractYamlValue "license:" packageLines
-      getGithub = extractYamlValue "github:" packageLines
-      getDesc = extractYamlValue "description:" packageLines
+  case parse Parser.file path content of
+    Left parseErr -> do
+      putStrLn $ formatEmacsError path 1 1 "error" "Parse" "File failed to parse"
+      putStrLn $ indent 4 (errorBundlePretty parseErr)
+      return [LintIssue path (Just 1) (Just 1) Error Correctness "E000"
+              "File failed to parse" Nothing Nothing]
 
-      getIndent = fromMaybe 4 (extractYamlInt "indentSize:" formatLines)
-      getTabs = fromMaybe False (extractYamlBool "useTabs:" formatLines)
-      getMaxLine = fromMaybe 80 (extractYamlInt "maxLineLength:" formatLines)
+    Right decls -> do
+      let ctx = buildContext path content decls config
+          allIssues = performAllChecks ctx
 
-  return $ ProjectConfig getName getVersion getAuthor getLicense getGithub getDesc getIndent getTabs getMaxLine
+      if null allIssues
+        then do
+          putStrLn $ "\x1b[1;32m✓\x1b[0m " ++ path ++ " \x1b[2m(no issues)\x1b[0m"
+          return []
+        else do
+          putStrLn $ "\x1b[1;33m⚠\x1b[0m " ++ path ++ " \x1b[2m(" ++
+                     show (length allIssues) ++ " issues)\x1b[0m"
+          return allIssues
 
--- | Extract value from YAML-like lines
-extractYamlValue :: T.Text -> [T.Text] -> String
-extractYamlValue key lines' =
-  case filter (T.isPrefixOf key . T.strip) lines' of
-    [] -> ""
-    (line:_) -> T.unpack $ T.strip $ T.drop (T.length key) $ T.dropWhile (/= ':') line
+--- PERFORM ALL CHECKS
 
-extractYamlInt :: T.Text -> [T.Text] -> Maybe Int
-extractYamlInt key lines' =
-  case extractYamlValue key lines' of
-    "" -> Nothing
-    val -> readMaybe (filter (/= '"') val)
+performAllChecks :: AnalysisContext -> [LintIssue]
+performAllChecks ctx =
+  let issues = concatMap (`runCheckIfEnabled` ctx) allChecks
+      sorted = sortIssues issues
+  in applyFilters ctx sorted
 
-extractYamlBool :: T.Text -> [T.Text] -> Maybe Bool
-extractYamlBool key lines' =
-  case extractYamlValue key lines' of
-    "" -> Nothing
-    "true" -> Just True
-    "false" -> Just False
-    _ -> Nothing
+-- Sort issues by severity, then by file/line
+sortIssues :: [LintIssue] -> [LintIssue]
+sortIssues = sortOn (\issue ->
+  (issueLevel issue, issueFile issue, fromMaybe 0 (issueLine issue)))
 
--- | Find project root by looking for package.yaml
--- Returns Nothing if no project root is found
-findProjectRoot :: FilePath -> IO (Maybe FilePath)
-findProjectRoot startPath = do
-  isFile <- doesFileExist startPath
-  let startDir = if isFile then takeDirectory startPath else startPath
-  searchUpwards startDir startDir (0 :: Int)
+-- Apply any additional filters
+applyFilters :: AnalysisContext -> [LintIssue] -> [LintIssue]
+applyFilters ctx issues =
+  let config = ctxConfig ctx
+      filtered = if cfgTreatWarningsAsErrors config
+                 then map promoteWarning issues
+                 else issues
+  in filtered
   where
-    searchUpwards originalDir dir depth
-      | depth > 20 = return Nothing  -- Prevent infinite loops
-      | otherwise = do
-          let packageFile = dir </> "package.yaml"
-          hasPackage <- doesFileExist packageFile
-          if hasPackage
-            then return (Just dir)
-            else do
-              let parent = takeDirectory dir
-              if parent == dir  -- We've reached the filesystem root
-                then return Nothing
-                else searchUpwards originalDir parent (depth + 1)
+    promoteWarning issue =
+      if issueLevel issue == Warning
+      then issue { issueLevel = Error }
+      else issue
 
--- Find all .ny files recursively
+-- ============================================================================
+-- CONFIGURATION LOADING
+-- ============================================================================
+
+loadConfig :: FilePath -> IO LintConfig
+loadConfig configPath = do
+  exists <- doesFileExist configPath
+  if exists
+    then parseConfigFile configPath
+    else return defaultConfig
+
+parseConfigFile :: FilePath -> IO LintConfig
+parseConfigFile path = do
+  content <- TIO.readFile path
+  let lines' = T.lines content
+  return $ parseConfigLines lines' defaultConfig
+
+parseConfigLines :: [T.Text] -> LintConfig -> LintConfig
+parseConfigLines [] config = config
+parseConfigLines (line:rest) config =
+  let trimmed = T.strip line
+  in if T.null trimmed || T.isPrefixOf "#" trimmed
+     then parseConfigLines rest config
+     else case T.splitOn ":" trimmed of
+       [key, value] ->
+         let key' = T.strip key
+             value' = T.strip value
+             updated = updateConfig key' value' config
+         in parseConfigLines rest updated
+       _ -> parseConfigLines rest config
+
+updateConfig :: T.Text -> T.Text -> LintConfig -> LintConfig
+updateConfig "max-line-length" value config =
+  case readMaybeInt value of
+    Just n -> config { cfgMaxLineLength = n }
+    Nothing -> config
+updateConfig "max-complexity" value config =
+  case readMaybeInt value of
+    Just n -> config { cfgMaxComplexity = n }
+    Nothing -> config
+updateConfig "max-function-length" value config =
+  case readMaybeInt value of
+    Just n -> config { cfgMaxFunctionLength = n }
+    Nothing -> config
+updateConfig "max-parameters" value config =
+  case readMaybeInt value of
+    Just n -> config { cfgMaxParameters = n }
+    Nothing -> config
+updateConfig "max-nesting-depth" value config =
+  case readMaybeInt value of
+    Just n -> config { cfgMaxNestingDepth = n }
+    Nothing -> config
+updateConfig "treat-warnings-as-errors" value config =
+  config { cfgTreatWarningsAsErrors = value `elem` ["true", "yes", "1"] }
+updateConfig "enable" value config =
+  config { cfgEnabledChecks = Set.insert (T.unpack value) (cfgEnabledChecks config) }
+updateConfig "disable" value config =
+  config { cfgDisabledChecks = Set.insert (T.unpack value) (cfgDisabledChecks config) }
+updateConfig "ignore" value config =
+  config { cfgIgnorePatterns = value : cfgIgnorePatterns config }
+updateConfig _ _ config = config
+
+readMaybeInt :: T.Text -> Maybe Int
+readMaybeInt t = case reads (T.unpack t) of
+  [(n, "")] -> Just n
+  _ -> Nothing
+
+--- HELPER FUNCTIONS
+
+shouldIgnore :: LintConfig -> FilePath -> Bool
+shouldIgnore config path =
+  let pathText = T.pack path
+      patterns = cfgIgnorePatterns config
+  in any (`T.isInfixOf` pathText) patterns
+
 findNyFiles :: FilePath -> IO [FilePath]
 findNyFiles dir = do
-  contents <- getDirectoryContents dir
+  absDir <- canonicalizePath dir  -- Make the directory path absolute
+  contents <- getDirectoryContents absDir
   let validEntries = filter (`notElem` [".", ".."]) contents
-  results <- mapM processEntry validEntries
+  results <- mapM (processEntry absDir) validEntries
   return (concat results)
   where
-    processEntry entry = do
-      let fullPath = dir </> entry
+    processEntry baseDir entry = do
+      let fullPath = baseDir </> entry
       isDir <- doesDirectoryExist fullPath
       if isDir
         then findNyFiles fullPath
@@ -156,151 +314,325 @@ findNyFiles dir = do
           then return [fullPath]
           else return []
 
--- Analyze a single file
-analyzeFile :: FilePath -> IO FileStats
-analyzeFile path = do
-  content <- TIO.readFile path
-  let linesList = T.lines content
-      totalLinesCount = length linesList
-      nonEmptyLines = filter (not . T.null . T.strip) linesList
-      codeLinesCount = length $ filter (not . isComment) nonEmptyLines
-      commentLinesCount = length nonEmptyLines - codeLinesCount
-      blankLinesCount = totalLinesCount - length nonEmptyLines
+-- findNyFiles :: FilePath -> IO [FilePath]
+-- findNyFiles dir = do
+--   contents <- getDirectoryContents dir
+--   let validEntries = filter (`notElem` [".", ".."]) contents
+--   results <- mapM processEntry validEntries
+--   return (concat results)
+--   where
+--     processEntry entry = do
+--       let fullPath = dir </> entry
+--       isDir <- doesDirectoryExist fullPath
+--       if isDir
+--         then findNyFiles fullPath
+--         else if takeExtension entry == ".ny"
+--           then return [fullPath]
+--           else return []
 
-  return $ FileStats
-    { fileName = path
-    , totalLines = totalLinesCount
-    , codeLines = codeLinesCount
-    , commentLines = commentLinesCount
-    , blankLines = blankLinesCount
-    }
+void :: IO a -> IO ()
+void action = action >> return ()
 
-data FileStats = FileStats
-  { fileName :: FilePath
-  , totalLines :: Int
-  , codeLines :: Int
-  , commentLines :: Int
-  , blankLines :: Int
-  }
-
--- Check if line is a comment (starts with -- or ; or ;;;)
-isComment :: T.Text -> Bool
-isComment line =
-  let trimmed = T.dropWhile isSpace line
-  in T.isPrefixOf "--" trimmed ||
-     T.isPrefixOf ";" trimmed ||
-     T.isPrefixOf ";;;" trimmed
-
--- | Display beautiful project statistics
-displayBeautifulStats :: FilePath -> ProjectConfig -> [FileStats] -> IO ()
-displayBeautifulStats projectRoot config fileStats = do
-  let totalFiles = length fileStats
-      totalLinesSum = sum $ map totalLines fileStats
-      totalCodeSum = sum $ map codeLines fileStats
-      totalCommentsSum = sum $ map commentLines fileStats
-      totalBlanksSum = sum $ map blankLines fileStats
-
-      codePct = percentage totalCodeSum totalLinesSum
-      commentPct = percentage totalCommentsSum totalLinesSum
-      blankPct = percentage totalBlanksSum totalLinesSum
-
-      avgLinesPerFile = if totalFiles > 0 then totalLinesSum `div` totalFiles else 0
-
-      projectNameStr = if null (projectName config) then takeFileName projectRoot else projectName config
-
-  putStrLn ""
-
-  -- Project header with tree-style metadata
-  putStrLn $ "\x1b[1;94m" ++ projectNameStr ++ "\x1b[0m \x1b[2m" ++ projectVersion config ++ "\x1b[0m"
-
-  let author = if null (projectAuthor config) then "\x1b[2mnot set\x1b[0m" else removeQuotes (projectAuthor config)
-      license = if null (projectLicense config) then "\x1b[2mnot set\x1b[0m" else projectLicense config
-      repo = if null (projectGithub config) then "\x1b[2mnot set\x1b[0m" else "https://github.com/" ++ removeQuotes (projectGithub config)
-      desc = if null (projectDescription config) then "\x1b[2mnot set\x1b[0m" else projectDescription config
-
-  putStrLn $ "\x1b[90m├─\x1b[0m \x1b[92mAuthor:\x1b[0m      " ++ author
-  putStrLn $ "\x1b[90m├─\x1b[0m \x1b[95mLicense:\x1b[0m     " ++ license
-  putStrLn $ "\x1b[90m├─\x1b[0m \x1b[95mRepository:\x1b[0m  \x1b[94m" ++ repo ++ "\x1b[0m"
-  putStrLn $ "\x1b[90m└─\x1b[0m \x1b[95mDescription:\x1b[0m " ++ desc
-
-  putStrLn ""
-
-  -- Stats overview - centered header with clean vertical divider
-  putStrLn "               \x1b[1;94mProject has\x1b[0m \x1b[2m"
-  putStrLn "─────────────────────┬────────────────────"
-  putStrLn $ " Files               │ " ++ padLeft 18 (show totalFiles)
-  putStrLn $ " Lines               │ " ++ padLeft 18 (show totalLinesSum)
-  putStrLn $ " Average per file    │ " ++ padLeft 18 (show avgLinesPerFile)
-  putStrLn "─────────────────────┼───────────────────"
-  putStrLn $ " \x1b[94mCode\x1b[0m                │ " ++ padLeft 12 (show totalCodeSum) ++ " \x1b[2m(" ++ printfPct codePct ++ ")\x1b[0m"
-  putStrLn $ " \x1b[92mComments\x1b[0m            │ " ++ padLeft 12 (show totalCommentsSum) ++ " \x1b[2m(" ++ printfPct commentPct ++ ")\x1b[0m"
-  putStrLn $ " \x1b[90mBlanks\x1b[0m              │ " ++ padLeft 12 (show totalBlanksSum) ++ " \x1b[2m(" ++ printfPct blankPct ++ ")\x1b[0m"
-
-  putStrLn ""
-
-  -- Language breakdown bar with semicircle edges
-  let barWidth = 40
-      codeBar = round (codePct * fromIntegral barWidth / 100)
-      commentBar = round (commentPct * fromIntegral barWidth / 100)
-      blankBar = barWidth - codeBar - commentBar
-
-  putStr "\x1b[94m◖\x1b[0m"
-  putStr $ "\x1b[44m" ++ replicate codeBar ' ' ++ "\x1b[0m"        -- Blue for code
-  putStr $ "\x1b[42m" ++ replicate commentBar ' ' ++ "\x1b[0m"     -- Green for comments
-  putStr $ "\x1b[47m" ++ replicate blankBar ' ' ++ "\x1b[0m"       -- Light gray for blanks
-  putStrLn "◗"
-
-  putStrLn $ " \x1b[94m●\x1b[0m Code \x1b[2m" ++ printfPct codePct ++ "\x1b[0m" ++
-             "   \x1b[92m●\x1b[0m Comments \x1b[2m" ++ printfPct commentPct ++ "\x1b[0m" ++
-             "   \x1b[90m●\x1b[0m Blanks \x1b[2m" ++ printfPct blankPct ++ "\x1b[0m"
-
-  putStrLn ""
-
-  -- Format configuration - centered header with vertical divider
-  putStrLn "                  \x1b[1mFormat\x1b[0m"
-  putStrLn $ " \x1b[93mIndentation\x1b[0m         ┬ " ++ padLeft 18 (show (formatIndentSize config) ++ " " ++ if formatUseTabs config then "tabs" else "spaces")
-  putStrLn $ " \x1b[93mMax line length\x1b[0m     │ " ++ padLeft 18 (show (formatMaxLineLength config) ++ " chars")
-  putStrLn "─────────────────────┴───────────────────"
-
-  putStrLn ""
-
-  -- Top files - centered header with vertical divider
-  unless (null fileStats) $ do
-    let topFiles = take 5 $ reverse $ sortOn totalLines fileStats
-        makeRelative path =
-          if take (length projectRoot) path == projectRoot
-            then drop (length projectRoot + 1) path
-            else path
-
-    putStrLn " \x1b[1;94mLargest Files\x1b[0m"
-    putStrLn "  Lines ┬ \x1b[92mFile:\x1b[0m"
-    mapM_ (\fs ->
-      let relPath = makeRelative (fileName fs)
-          lineStr = show (totalLines fs)
-          pathColor = if totalLines fs > 100 then "\x1b[93m" else "\x1b[0m"  -- Yellow if > 100 lines
-      in putStrLn $ " " ++ padLeft 6 lineStr ++ " │ " ++ pathColor ++ relPath ++ "\x1b[0m") topFiles
-
-    putStrLn ""
-
-
--- Remove quotes from strings
-removeQuotes :: String -> String
-removeQuotes = filter (/= '"')
-
--- Helper functions
-padRight :: Int -> String -> String
-padRight width str = take width (str ++ repeat ' ')
-
-padLeft :: Int -> String -> String
-padLeft width str = replicate (width - length str) ' ' ++ str
-
-percentage :: Int -> Int -> Double
-percentage part total = if total == 0 then 0 else fromIntegral part / fromIntegral total * 100
-
-printfPct :: Double -> String
-printfPct pct = show (round pct :: Int) ++ "%"
-
--- Conditional execution
 unless :: Bool -> IO () -> IO ()
 unless True _ = return ()
 unless False action = action
+
+indent :: Int -> String -> String
+indent n s = unlines $ map ((replicate n ' ') ++) (lines s)
+
+--- FORMATTING AND DISPLAY
+
+formatEmacsError :: FilePath -> Int -> Int -> String -> String -> String -> String
+formatEmacsError file line col level category msg =
+  file ++ ":" ++ show line ++ ":" ++ show col ++ ": " ++
+  level ++ ": [" ++ category ++ "] " ++ msg
+
+formatIssueEmacs :: LintIssue -> String
+formatIssueEmacs issue =
+  let line = fromMaybe 1 (issueLine issue)
+      col = fromMaybe 1 (issueColumn issue)
+      level = case issueLevel issue of
+        Error -> "error"
+        Warning -> "warning"
+        Info -> "info"
+      category = show (issueCategory issue)
+  in file ++ ":" ++ show line ++ ":" ++ show col ++ ": " ++
+     level ++ ": [" ++ issueCode issue ++ "] " ++ issueMessage issue ++
+     case issueSuggestion issue of
+       Just suggestion -> "\n    → " ++ suggestion
+       Nothing -> ""
+  where file = issueFile issue
+
+displayLintSummary :: [LintIssue] -> IO ()
+displayLintSummary issues = do
+  let errors = filter ((== Error) . issueLevel) issues
+      warnings = filter ((== Warning) . issueLevel) issues
+      infos = filter ((== Info) . issueLevel) issues
+      fileGroups = groupByFile issues
+      byCategory = groupByCategory issues
+
+  putStrLn ""
+
+  unless (null issues) $ do
+    mapM_ displayFileIssues fileGroups
+    putStrLn ""
+
+    putStrLn "\x1b[1mIssues by Category:\x1b[0m"
+    mapM_ displayCategoryCount byCategory
+    putStrLn ""
+
+  displaySeverityCounts errors warnings infos
+
+  putStrLn ""
+
+  if null issues
+    then putStrLn "\x1b[1;32m✓ All files passed linting!\x1b[0m"
+    else do
+      putStrLn $ "\x1b[1;33m⚠ Found " ++ show (length issues) ++ " total issues\x1b[0m"
+      when (not $ null errors) $
+        putStrLn "\x1b[1;31m✗ Build failed due to errors\x1b[0m"
+
+  putStrLn ""
+
+displaySeverityCounts :: [LintIssue] -> [LintIssue] -> [LintIssue] -> IO ()
+displaySeverityCounts errors warnings infos = do
+  unless (null errors) $
+    putStrLn $ "\x1b[1;31m✗ Errors:\x1b[0m " ++ show (length errors)
+  unless (null warnings) $
+    putStrLn $ "\x1b[1;33m⚠ Warnings:\x1b[0m " ++ show (length warnings)
+  unless (null infos) $
+    putStrLn $ "\x1b[1;36mℹ Info:\x1b[0m " ++ show (length infos)
+
+groupByFile :: [LintIssue] -> [(FilePath, [LintIssue])]
+groupByFile issues =
+  let files = nub $ map issueFile issues
+  in [(file, filter ((== file) . issueFile) issues) | file <- files]
+
+groupByCategory :: [LintIssue] -> [(IssueCategory, [LintIssue])]
+groupByCategory issues =
+  let categories = nub $ map issueCategory issues
+  in [(cat, filter ((== cat) . issueCategory) issues) | cat <- categories]
+
+displayFileIssues :: (FilePath, [LintIssue]) -> IO ()
+displayFileIssues (file, issues) = do
+  putStrLn $ file ++ ":"
+  mapM_ (putStrLn . formatIssueEmacs) issues
+
+displayCategoryCount :: (IssueCategory, [LintIssue]) -> IO ()
+displayCategoryCount (category, issues) =
+  putStrLn $ "  " ++ categoryIcon category ++ " " ++
+             show category ++ ": " ++ show (length issues)
+
+categoryIcon :: IssueCategory -> String
+categoryIcon Correctness = "\x1b[1;31m✗\x1b[0m"
+categoryIcon Safety = "\x1b[1;33m⚠\x1b[0m"
+categoryIcon Security = "\x1b[1;35m🔒\x1b[0m"
+categoryIcon Performance = "\x1b[1;33m⚡\x1b[0m"
+categoryIcon Maintainability = "\x1b[1;36m🔧\x1b[0m"
+categoryIcon Style = "\x1b[1;94m✨\x1b[0m"
+categoryIcon Documentation = "\x1b[1;92m📝\x1b[0m"
+categoryIcon Complexity = "\x1b[1;93m📊\x1b[0m"
+
+when :: Bool -> IO () -> IO ()
+when True action = action
+when False _ = return ()
+
+--- JSON OUTPUT (for CI/CD integration)
+
+outputJson :: [LintIssue] -> IO ()
+outputJson issues = do
+  putStrLn "{"
+  putStrLn "  \"issues\": ["
+  mapM_ outputIssueJson (zip issues [1..])
+  putStrLn "  ]"
+  putStrLn "}"
+
+outputIssueJson :: (LintIssue, Int) -> IO ()
+outputIssueJson (issue, idx) = do
+  let comma = if idx == 1 then "" else ","
+  putStrLn $ comma ++ "    {"
+  putStrLn $ "      \"file\": \"" ++ escapeJson (issueFile issue) ++ "\","
+  putStrLn $ "      \"line\": " ++ show (fromMaybe 0 (issueLine issue)) ++ ","
+  putStrLn $ "      \"column\": " ++ show (fromMaybe 0 (issueColumn issue)) ++ ","
+  putStrLn $ "      \"level\": \"" ++ show (issueLevel issue) ++ "\","
+  putStrLn $ "      \"category\": \"" ++ show (issueCategory issue) ++ "\","
+  putStrLn $ "      \"code\": \"" ++ issueCode issue ++ "\","
+  putStrLn $ "      \"message\": \"" ++ escapeJson (issueMessage issue) ++ "\""
+  putStrLn "    }"
+
+escapeJson :: String -> String
+escapeJson = concatMap escape
+  where
+    escape '"' = "\\\""
+    escape '\\' = "\\\\"
+    escape '\n' = "\\n"
+    escape '\t' = "\\t"
+    escape c = [c]
+
+-- Add these functions to Ops/LintOps.hs
+
+-- ============================================================================
+-- VALIDATE PATH (Quick syntax validation only)
+-- ============================================================================
+
+validatePath :: FilePath -> IO ()
+validatePath path = validatePathWithConfig path defaultConfig
+
+validatePathWithConfig :: FilePath -> LintConfig -> IO ()
+validatePathWithConfig path config = do
+  isFile <- doesFileExist path
+  isDir <- doesDirectoryExist path
+
+  if isFile && takeExtension path == ".ny"
+    then void (validateFileWithConfig path config)
+    else if isDir
+      then validateDirectoryWithConfig path config
+      else do
+        putStrLn ""
+        putStrLn $ "\x1b[1;31mError:\x1b[0m Invalid path: " ++ path
+        putStrLn "Expected a .ny file or directory"
+        putStrLn ""
+
+validateFileWithConfig :: FilePath -> LintConfig -> IO Bool
+validateFileWithConfig path _config = do
+  content <- TIO.readFile path
+
+  case parse Parser.file path content of
+    Left parseErr -> do
+      putStrLn $ "\x1b[1;31m✗\x1b[0m " ++ path ++ " \x1b[2m(parse error)\x1b[0m"
+      putStrLn $ indent 4 (errorBundlePretty parseErr)
+      return False
+
+    Right _decls -> do
+      putStrLn $ "\x1b[1;32m✓\x1b[0m " ++ path ++ " \x1b[2m(valid syntax)\x1b[0m"
+      return True
+
+validateDirectoryWithConfig :: FilePath -> LintConfig -> IO ()
+validateDirectoryWithConfig dir config = do
+  nyFiles <- findNyFiles dir
+
+  let filteredFiles = filter (not . shouldIgnore config) nyFiles
+
+  if null filteredFiles
+    then do
+      putStrLn ""
+      putStrLn $ "\x1b[1;33mWarning:\x1b[0m No .ny files found in: " ++ dir
+      putStrLn ""
+    else do
+      putStrLn ""
+      putStrLn $ "\x1b[1;94mValidating\x1b[0m " ++ show (length filteredFiles) ++
+                 " files in: " ++ dir
+      putStrLn ""
+      results <- mapM (\f -> validateFileWithConfig f config) filteredFiles
+      let validCount = length (filter id results)
+          invalidCount = length (filter not results)
+      putStrLn ""
+      if invalidCount == 0
+        then putStrLn $ "\x1b[1;32m✓ All " ++ show validCount ++ " files have valid syntax!\x1b[0m"
+        else putStrLn $ "\x1b[1;31m✗ " ++ show invalidCount ++ " files have syntax errors\x1b[0m"
+      putStrLn ""
+
+-- ============================================================================
+-- STATS PATH (Show statistics about code)
+-- ============================================================================
+
+statsPath :: FilePath -> IO ()
+statsPath path = statsPathWithConfig path defaultConfig
+
+statsPathWithConfig :: FilePath -> LintConfig -> IO ()
+statsPathWithConfig path config = do
+  isFile <- doesFileExist path
+  isDir <- doesDirectoryExist path
+
+  if isFile && takeExtension path == ".ny"
+    then statsFile path
+    else if isDir
+      then statsDirectory path config
+      else do
+        putStrLn ""
+        putStrLn $ "\x1b[1;31mError:\x1b[0m Invalid path: " ++ path
+        putStrLn "Expected a .ny file or directory"
+        putStrLn ""
+
+statsFile :: FilePath -> IO ()
+statsFile path = do
+  content <- TIO.readFile path
+
+  case parse Parser.file path content of
+    Left parseErr -> do
+      putStrLn ""
+      putStrLn $ "\x1b[1;31mError:\x1b[0m Failed to parse " ++ path
+      putStrLn $ indent 4 (errorBundlePretty parseErr)
+      putStrLn ""
+
+    Right decls -> do
+      let stats = computeStats content decls
+      displayFileStats path stats
+
+statsDirectory :: FilePath -> LintConfig -> IO ()
+statsDirectory dir config = do
+  nyFiles <- findNyFiles dir
+  let filteredFiles = filter (not . shouldIgnore config) nyFiles
+
+  if null filteredFiles
+    then do
+      putStrLn ""
+      putStrLn $ "\x1b[1;33mWarning:\x1b[0m No .ny files found in: " ++ dir
+      putStrLn ""
+    else do
+      allStats <- catMaybes <$> mapM statsFileQuiet filteredFiles
+      displayDirectoryStats dir allStats
+
+statsFileQuiet :: FilePath -> IO (Maybe FileStats)
+statsFileQuiet path = do
+  content <- TIO.readFile path
+  case parse Parser.file path content of
+    Left _ -> return Nothing
+    Right decls -> return $ Just (computeStats content decls)
+
+data FileStats = FileStats
+  { statLines :: Int
+  , statFunctions :: Int
+  , statComments :: Int
+  , statBlankLines :: Int
+  } deriving (Show)
+
+computeStats :: T.Text -> [AST.Decl] -> FileStats
+computeStats content decls =
+  let lines' = T.lines content
+      totalLines = length lines'
+      blankLines = length $ filter (T.null . T.strip) lines'
+      functions = length [() | AST.FnDecl {} <- decls]
+      comments = length [() | AST.CommentDecl {} <- decls]
+  in FileStats totalLines functions comments blankLines
+
+displayFileStats :: FilePath -> FileStats -> IO ()
+displayFileStats path stats = do
+  putStrLn ""
+  putStrLn $ "\x1b[1mStatistics for:\x1b[0m " ++ path
+  putStrLn ""
+  putStrLn $ "  Lines of code:   " ++ show (statLines stats)
+  putStrLn $ "  Functions:       " ++ show (statFunctions stats)
+  putStrLn $ "  Comments:        " ++ show (statComments stats)
+  putStrLn $ "  Blank lines:     " ++ show (statBlankLines stats)
+  putStrLn ""
+
+displayDirectoryStats :: FilePath -> [FileStats] -> IO ()
+displayDirectoryStats dir allStats = do
+  let totalLines = sum $ map statLines allStats
+      totalFunctions = sum $ map statFunctions allStats
+      totalComments = sum $ map statComments allStats
+      totalBlankLines = sum $ map statBlankLines allStats
+      fileCount = length allStats
+
+  putStrLn ""
+  putStrLn $ "\x1b[1mStatistics for:\x1b[0m " ++ dir
+  putStrLn ""
+  putStrLn $ "  Files:           " ++ show fileCount
+  putStrLn $ "  Total lines:     " ++ show totalLines
+  putStrLn $ "  Functions:       " ++ show totalFunctions
+  putStrLn $ "  Comments:        " ++ show totalComments
+  putStrLn $ "  Blank lines:     " ++ show totalBlankLines
+  putStrLn ""
+  putStrLn $ "  Avg lines/file:  " ++ show (if fileCount > 0 then totalLines `div` fileCount else 0)
+  putStrLn ""

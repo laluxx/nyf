@@ -4,7 +4,7 @@
 ### INDENTATION
 
 indentSize: 4                     # Spaces per indentation level
-useTabs: false                    # Use tabs instead of spaces
+useTabs: true                    # Use tabs instead of spaces
 
 ### LINE LENGTH
 
